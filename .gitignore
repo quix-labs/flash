@@ -1,0 +1,25 @@
+# IDE and editor specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.bak
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Go specific
+/go/bin/
+/go/pkg/
+/go/src/
+go.sum
