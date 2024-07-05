@@ -2,44 +2,30 @@ package client
 
 import (
 	"errors"
+	"github.com/quix-labs/flash/pkg/types"
 )
 
-type Event uint8
+type EventCallback func(event types.Event)
 
-const (
-	EventInsert Event = 1 << iota
-	EventUpdate
-	EventDelete
-	EventTruncate
-
-	EventsAll = EventInsert | EventUpdate | EventDelete | EventTruncate
-)
-
-type EventCallback func(Event)
-
-type ListenerConfig struct {
-	Table string
-}
-
-func NewListener(config *ListenerConfig) *Listener {
+func NewListener(config *types.ListenerConfig) *Listener {
 	if config == nil {
 		panic("config is nil")
 	}
 
 	return &Listener{
 		Config:    config,
-		callbacks: make(map[*EventCallback]Event),
+		callbacks: make(map[*EventCallback]types.Event),
 	}
 }
 
-type CreateEventCallback func(event Event) error
-type DeleteEventCallback func(event Event) error
+type CreateEventCallback func(event types.Event) error
+type DeleteEventCallback func(event types.Event) error
 type Listener struct {
-	Config *ListenerConfig
+	Config *types.ListenerConfig
 
 	// Internals
-	callbacks      map[*EventCallback]Event
-	listenedEvents Event // Use bitwise comparison to check for listened events
+	callbacks      map[*EventCallback]types.Event
+	listenedEvents types.Event // Use bitwise comparison to check for listened events
 
 	// Trigger client
 	_clientCreateEventCallback CreateEventCallback
@@ -49,7 +35,7 @@ type Listener struct {
 
 /* Callback management */
 
-func (l *Listener) On(event Event, callback EventCallback) (func() error, error) {
+func (l *Listener) On(event types.Event, callback EventCallback) (func() error, error) {
 	if callback == nil {
 		return nil, errors.New("callback cannot be nil")
 	}
@@ -71,8 +57,8 @@ func (l *Listener) On(event Event, callback EventCallback) (func() error, error)
 	return removeFunc, nil
 }
 
-func (l *Listener) Dispatch(event Event) {
-	for mask := Event(1); mask != 0 && mask <= EventsAll; mask <<= 1 {
+func (l *Listener) Dispatch(event types.Event) {
+	for mask := types.Event(1); mask != 0 && mask <= types.EventsAll; mask <<= 1 {
 		if event&mask == 0 {
 			continue
 		}
@@ -96,11 +82,11 @@ func (l *Listener) Init(_createCallback CreateEventCallback, _deleteCallback Del
 	l._clientDeleteEventCallback = _deleteCallback
 
 	// Emit all events for initialization
-	for mask := Event(1); mask != 0 && mask <= EventsAll; mask <<= 1 {
-		if l.listenedEvents&mask == 0 {
+	for targetEvent := types.Event(1); targetEvent != 0 && targetEvent <= types.EventsAll; targetEvent <<= 1 {
+		if l.listenedEvents&targetEvent == 0 {
 			continue
 		}
-		if err := _createCallback(mask); err != nil {
+		if err := _createCallback(targetEvent); err != nil {
 			return err
 		}
 	}
@@ -110,7 +96,28 @@ func (l *Listener) Init(_createCallback CreateEventCallback, _deleteCallback Del
 	return nil
 }
 
-func (l *Listener) addListenedEventIfNeeded(event Event) error {
+func (l *Listener) Close() error {
+	//TODO LOCK
+	if !l._clientInitialized {
+		return nil
+	}
+
+	// Emit all events for initialization
+	for targetEvent := types.Event(1); targetEvent != 0 && targetEvent <= types.EventsAll; targetEvent <<= 1 {
+		if l.listenedEvents&targetEvent == 0 {
+			continue
+		}
+		if err := l._clientDeleteEventCallback(targetEvent); err != nil {
+			return err
+		}
+	}
+
+	l._clientInitialized = false
+	//TODO UNLOCK
+	return nil
+}
+
+func (l *Listener) addListenedEventIfNeeded(event types.Event) error {
 	initialEvents := l.listenedEvents
 	l.listenedEvents |= event
 
@@ -120,7 +127,7 @@ func (l *Listener) addListenedEventIfNeeded(event Event) error {
 		return nil
 	}
 
-	for targetEvent := Event(1); targetEvent != 0 && targetEvent <= EventsAll; targetEvent <<= 1 {
+	for targetEvent := types.Event(1); targetEvent != 0 && targetEvent <= types.EventsAll; targetEvent <<= 1 {
 		if !l._clientInitialized || targetEvent&diff == 0 || targetEvent&event == 0 {
 			continue
 		}
@@ -132,8 +139,8 @@ func (l *Listener) addListenedEventIfNeeded(event Event) error {
 	return nil
 }
 
-func (l *Listener) removeListenedEventIfNeeded(event Event) error {
-	for targetEvent := Event(1); targetEvent != 0 && targetEvent <= event; targetEvent <<= 1 {
+func (l *Listener) removeListenedEventIfNeeded(event types.Event) error {
+	for targetEvent := types.Event(1); targetEvent != 0 && targetEvent <= event; targetEvent <<= 1 {
 		if targetEvent&l.listenedEvents == 0 {
 			continue
 		}
@@ -151,7 +158,7 @@ func (l *Listener) removeListenedEventIfNeeded(event Event) error {
 	return nil
 }
 
-func (l *Listener) hasListenersForEvent(event Event) bool {
+func (l *Listener) hasListenersForEvent(event types.Event) bool {
 	for _, listens := range l.callbacks {
 		if listens&event > 0 {
 			return true
