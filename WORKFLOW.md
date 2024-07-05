@@ -1,6 +1,6 @@
 ```mermaid
 sequenceDiagram
-    participant Main
+    participant Your Go App
     participant Listener
     participant Client
     participant Driver
@@ -8,13 +8,13 @@ sequenceDiagram
     participant External
 
     alt Before Client Start
-        Main->>Listener: on(eventUpdate^EventInsert)
-        Main->>Client: AddListener(listener)
-        Note over Main, Client: Main adds Listener for eventUpdate and EventInsert
+        Your Go App->>Listener: on(eventUpdate^EventInsert)
+        Your Go App->>Client: AddListener(listener)
+        Note over Your Go App, Client: Create and register Listener for eventUpdate and EventInsert
     end
 
     alt Client Start and Trigger Creation
-        Main->>Client: start()
+        Your Go App->>Client: start()
         activate Client
         Client->>Driver: send listen for update signal
         Driver->>Database: create trigger on update
@@ -29,11 +29,11 @@ sequenceDiagram
     end
 
     alt Listen for New Database Changes on Deletion (DELETE)
-        Main->>Listener: on(eventDelete)
+        Your Go App->>Listener: on(eventDelete)
         Listener->>Client: start listening for delete
         Client->>Driver: send listen for delete signal
         Driver->>Database: create trigger on delete
-        Note over Main, Database: Main starts listening for eventDelete
+        Note over Your Go App, Database: Your Go App starts listening for eventDelete
     end
 
     alt DELETE operation in Database (handled)
@@ -43,21 +43,21 @@ sequenceDiagram
         Client-->>Listener: Notify listener
         Note over Client, Listener: Client notifies the Listener of the received event
         alt Listener processes event
-            Listener-->>Main: Event processed
-            Note over Listener, Main: Listener processes the event
+            Listener-->>Your Go App: Event processed
+            Note over Listener, Your Go App: Listener processes the event
         end
     end
 
     alt Stop Listening for Deletion Events
-        Main->>Listener: off(eventDelete)
+        Your Go App->>Listener: off(eventDelete)
         Listener->>Client: stop listening for delete
         Client->>Driver: send stop listening for delete signal
         Driver->>Database: delete trigger on delete
-        Note over Main, Database: Client and Driver stop listening for delete events
+        Note over Your Go App, Database: Client and Driver stop listening for delete events
     end
 
     alt Application Shutdown
-        Main->>Client: stop()
+        Your Go App->>Client: stop()
         activate Client
         Client->>Driver: stop listening for insert
         Driver-->>Database: delete trigger on insert
