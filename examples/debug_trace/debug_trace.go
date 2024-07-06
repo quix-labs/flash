@@ -22,7 +22,7 @@ func main() {
 	}
 	defer stop()
 
-	// Create custom logger
+	// Create custom logger with Level Trace <-> Default is Debug
 	logger := zerolog.New(os.Stdout).Level(zerolog.TraceLevel).With().Stack().Timestamp().Logger()
 
 	// Create client

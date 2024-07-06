@@ -11,8 +11,8 @@ func main() {
 	postsListenerConfig := &types.ListenerConfig{Table: "public.posts"}
 	postsListener := listeners.NewListener(postsListenerConfig)
 
-	// Registering your callbacks -> Can be simplified with types.EventAll
-	stop, err := postsListener.On(types.EventTruncate|types.EventInsert|types.EventUpdate|types.EventDelete, func(event *types.ReceivedEvent) {
+	// Registering your callbacks
+	stop, err := postsListener.On(types.EventInsert, func(event *types.ReceivedEvent) {
 		fmt.Printf("Event received: %+v\n", event)
 	})
 	if err != nil {
