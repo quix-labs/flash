@@ -3,6 +3,7 @@ package listeners
 import (
 	"errors"
 	"github.com/quix-labs/flash/pkg/types"
+	"sync"
 )
 
 func NewListener(config *types.ListenerConfig) *Listener {
@@ -22,6 +23,7 @@ type Listener struct {
 	Config *types.ListenerConfig
 
 	// Internals
+	sync.Mutex
 	callbacks      map[*types.EventCallback]types.Event
 	listenedEvents types.Event // Use bitwise comparison to check for listened events
 
@@ -75,7 +77,9 @@ func (l *Listener) Dispatch(event *types.ReceivedEvent) {
 
 // Init emit all event for first boot */
 func (l *Listener) Init(_createCallback CreateEventCallback, _deleteCallback DeleteEventCallback) error {
-	//TODO LOCK
+	l.Lock()
+	defer l.Unlock()
+
 	l._clientCreateEventCallback = _createCallback
 	l._clientDeleteEventCallback = _deleteCallback
 
@@ -90,12 +94,11 @@ func (l *Listener) Init(_createCallback CreateEventCallback, _deleteCallback Del
 	}
 
 	l._clientInitialized = true
-	//TODO UNLOCK
 	return nil
 }
 
 func (l *Listener) Close() error {
-	//TODO LOCK
+
 	if !l._clientInitialized {
 		return nil
 	}
@@ -111,11 +114,11 @@ func (l *Listener) Close() error {
 	}
 
 	l._clientInitialized = false
-	//TODO UNLOCK
 	return nil
 }
 
 func (l *Listener) addListenedEventIfNeeded(event types.Event) error {
+
 	initialEvents := l.listenedEvents
 	l.listenedEvents |= event
 
@@ -129,15 +132,18 @@ func (l *Listener) addListenedEventIfNeeded(event types.Event) error {
 		if !l._clientInitialized || targetEvent&diff == 0 || targetEvent&event == 0 {
 			continue
 		}
+		l.Lock()
 		if err := l._clientCreateEventCallback(targetEvent); err != nil {
 			return err
 		}
+		l.Unlock()
 	}
 
 	return nil
 }
 
 func (l *Listener) removeListenedEventIfNeeded(event types.Event) error {
+
 	for targetEvent := types.Event(1); targetEvent != 0 && targetEvent <= event; targetEvent <<= 1 {
 		if targetEvent&l.listenedEvents == 0 {
 			continue
@@ -148,9 +154,11 @@ func (l *Listener) removeListenedEventIfNeeded(event types.Event) error {
 
 		l.listenedEvents &= ^targetEvent
 		if l._clientInitialized {
+			l.Lock()
 			if err := l._clientDeleteEventCallback(targetEvent); err != nil {
 				return err
 			}
+			l.Unlock()
 		}
 	}
 	return nil
