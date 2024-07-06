@@ -36,33 +36,30 @@ package main
 
 import (
 	"fmt"
-	"github.com/quix-labs/flash/pkg/client"
-	"github.com/quix-labs/flash/pkg/types"
 	"os"
 	"os/signal"
+
+	"github.com/quix-labs/flash/pkg/client"
+	"github.com/quix-labs/flash/pkg/types"
 )
 
 func main() {
-	postsListener := client.NewListener(&types.ListenerConfig{
-		Table: "posts",
+	// Example with listener and client setup
+	postsListenerConfig := &types.ListenerConfig{Table: "public.posts"}
+	postsListener := listeners.NewListener(postsListenerConfig)
+	postsListener.On(types.EventsAll, func(event *types.ReceivedEvent) {
+		fmt.Printf("Event received: %+v\n", event)
 	})
-	stop, _ := postsListener.On(types.EventUpdate^types.EventDelete, func(event types.Event) {
-		fmt.Println("Event received All" + string(event))
-	})
-	defer stop()
 
-	flashClient := client.NewClient(&types.ClientConfig{
-		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
-	})
-	flashClient.AddListener(postsListener)
-	go func() {
-		err := flashClient.Start()
-		if err != nil {
-			fmt.Println(err)
-			panic(err)
-		}
-	}()
+	// Create client
+	clientConfig := &types.ClientConfig{DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb"}
+	flashClient := client.NewClient(clientConfig)
+	flashClient.Attach(postsListener)
+
+	// Start listening
+	go flashClient.Start()
 	defer flashClient.Close()
+
 	// Wait for interrupt signal (Ctrl+C)
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
@@ -70,8 +67,12 @@ func main() {
 
 	fmt.Println("Program terminated.")
 }
-
 ```
+
+For more detailed examples, check out the following files:
+
+- [Debug queries](examples/debug_trace/debug_trace.go)
+- [Trigger all events on table](examples/trigger_all/trigger_all.go)
 
 ## Planned Features
 

@@ -36,7 +36,7 @@ type Client struct {
 	listeners map[string]*listeners.Listener
 }
 
-func (c *Client) AddListener(l *listeners.Listener) {
+func (c *Client) Attach(l *listeners.Listener) {
 	listenerUid := c.getUniqueNameForListener(l)
 	c.listeners[listenerUid] = l
 }

@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
@@ -86,16 +87,21 @@ func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
 		return err
 	}
 
-	d.subChan = make(chan string)
-	d.unsubChan = make(chan string)
-	errChan := make(chan error)
+	d.subChan = make(chan string, len(d.activeEvents))
+	d.unsubChan = make(chan string, 1)
+
+	// Initialize subChan with activeEvents in queue
+	for eventName := range d.activeEvents {
+		d.subChan <- eventName
+	}
 
 	// Needed because cannot execute LISTEN, UNLISTEN when WaitForNotification is running
-	pausedChan := make(chan bool)
-	resumeChan := make(chan bool)
+	pausedChan := make(chan bool, 1)
+	resumeChan := make(chan bool, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	errChan := make(chan error, 1)
 	go func() {
 		for {
 			select {
@@ -137,26 +143,23 @@ func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
 				continue
 			}
 
-			//TODO PARSE PAYLOAD
-
 			listenerUid, event, _ := d.parseEventName(receivedEvent.Channel)
 			if err != nil {
 				errChan <- err
 			}
+
+			var data map[string]interface{}
+			if err := json.Unmarshal([]byte(receivedEvent.Payload), &data); err != nil {
+				errChan <- err
+			}
+
 			*eventsChan <- &types.DatabaseEvent{
 				ListenerUid: listenerUid,
 				ReceivedEvent: &types.ReceivedEvent{
 					Event: event,
-					Data:  receivedEvent.Payload,
+					Data:  data,
 				},
 			}
-		}
-	}()
-
-	go func() {
-		// Bootstrap activeEvents on first boot
-		for eventName := range d.activeEvents {
-			d.subChan <- eventName
 		}
 	}()
 
