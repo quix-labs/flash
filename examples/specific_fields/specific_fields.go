@@ -8,8 +8,10 @@ import (
 )
 
 func main() {
-	postsListenerConfig := &types.ListenerConfig{Table: "public.posts"}
-	postsListener := listeners.NewListener(postsListenerConfig)
+	postsListener := listeners.NewListener(&types.ListenerConfig{
+		Table:  "public.posts",
+		Fields: []string{"id", "slug"},
+	})
 	postsListener.On(types.EventsAll, func(event *types.ReceivedEvent) {
 		fmt.Printf("Event received: %+v\n", event)
 	})
@@ -19,8 +21,12 @@ func main() {
 	flashClient := client.NewClient(clientConfig)
 	flashClient.Attach(postsListener)
 
-	// Start listening
-	go flashClient.Start() // Error Handling
+	go func() {
+		err := flashClient.Start()
+		if err != nil {
+			panic(err)
+		}
+	}()
 	defer flashClient.Close()
 
 	// Keep process running

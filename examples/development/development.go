@@ -11,7 +11,10 @@ import (
 )
 
 func main() {
-	postsListenerConfig := &types.ListenerConfig{Table: "public.posts"}
+	postsListenerConfig := &types.ListenerConfig{
+		Table: "public.posts",
+		//Fields: []string{"id", "slug"},
+	}
 	postsListener := listeners.NewListener(postsListenerConfig)
 
 	// Registering your callbacks
@@ -35,7 +38,12 @@ func main() {
 	flashClient.Attach(postsListener)
 
 	// Start listening
-	go flashClient.Start() // Error Handling
+	go func() {
+		err := flashClient.Start()
+		if err != nil {
+			panic(err)
+		}
+	}() // Error Handling
 	defer flashClient.Close()
 
 	// Wait for interrupt signal (Ctrl+C)

@@ -73,6 +73,7 @@ For more detailed examples, check out the following files:
 
 - [Debug queries](examples/debug_trace/debug_trace.go)
 - [Trigger all events on table](examples/trigger_all/trigger_all.go)
+- [Listen for specific fields](examples/specific_fields/specific_fields.go)
 
 ## Drivers
 You can see all drivers details [here](pkg/drivers/DRIVERS.md)
@@ -82,9 +83,9 @@ You can see all drivers details [here](pkg/drivers/DRIVERS.md)
 The following features are planned for future implementation:
 
 - [x] Driver interfaces for creating new drivers.
+- [x] Listen for changes in specific columns, not the entire row.
 - [ ] Remove client in favor of direct listener start
 - [ ] Support attaching/detaching new listener during runtime.
-- [ ] Listen for changes in specific columns, not the entire row.
 - [ ] Soft-delete support: receive delete events when SQL condition is respected. Example: `deleted_at IS NOT NULL`.
 - [ ] More performant driver. See [DRIVERS.md](pkg/drivers/DRIVERS.md)
 - [ ] Tests implementation

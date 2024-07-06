@@ -62,7 +62,7 @@ func (c *Client) Start() error {
 			if !exists {
 				return fmt.Errorf("listener %s not found", receivedEvent.ListenerUid) // I think simply can be ignored
 			}
-			listener.Dispatch(receivedEvent.ReceivedEvent) //TODO SEND DATA
+			listener.Dispatch(receivedEvent.ReceivedEvent)
 		case err := <-errChan:
 			return err
 		}
@@ -75,6 +75,7 @@ func (c *Client) Init() error {
 		return err
 	}
 	c.Config.Logger.Debug().Msg("Init listeners")
+
 	// Init listeners (parallel)
 	var wg sync.WaitGroup
 	for lUid, l := range c.listeners {
@@ -84,7 +85,6 @@ func (c *Client) Init() error {
 		listener := l       // Keep intermediate value to avoid conflict between loop iterations
 
 		errChan := make(chan error)
-
 		go func() {
 			defer wg.Done()
 			err := listener.Init(func(event types.Event) error {
@@ -92,13 +92,15 @@ func (c *Client) Init() error {
 			}, func(event types.Event) error {
 				return c.Config.Driver.HandleEventListenStop(listenerUid, listener.Config, &event)
 			})
-			if err != nil {
-				errChan <- err
-			}
+			errChan <- err
 		}()
+		err := <-errChan
+		if err != nil {
+			return err
+		}
 	}
-	//TODO DETECT Error in err-chan
 	wg.Wait()
+
 	c.Config.Logger.Debug().Msg("Listener initialized")
 	return nil
 }

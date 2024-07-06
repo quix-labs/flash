@@ -25,36 +25,166 @@ func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.Listen
 	triggerFnName := uniqueName + "_fn"
 	eventName := uniqueName + "_event"
 
-	statement := fmt.Sprintf(`
-CREATE OR REPLACE FUNCTION "%s"."%s"() RETURNS trigger AS $trigger$
-BEGIN 
-  PERFORM pg_notify('%s', ROW_TO_JSON(COALESCE(NEW,OLD))::TEXT);
-  RETURN COALESCE(NEW, OLD);
-END;
-$trigger$ LANGUAGE plpgsql VOLATILE;`,
-		d.Config.Schema, triggerFnName, eventName)
+	var statement string
+	if len(l.Fields) == 0 {
+		statement = fmt.Sprintf(`
+			CREATE OR REPLACE FUNCTION "%s"."%s"() RETURNS trigger AS $trigger$
+			BEGIN 
+				PERFORM pg_notify('%s', ROW_TO_JSON(COALESCE(NEW, OLD))::TEXT);
+				RETURN COALESCE(NEW, OLD);
+			END;
+			$trigger$ LANGUAGE plpgsql VOLATILE;`,
+			d.Config.Schema, triggerFnName, eventName)
+	} else {
+		var rawFields, rawConditionSql string
+
+		if operation == "TRUNCATE" {
+			rawFields = "null"
+		} else {
+			rawConditions := make([]string, len(l.Fields))
+			for i, field := range l.Fields {
+				rawConditions[i] = fmt.Sprintf(`OLD."%s" <> NEW."%s"`, field, field)
+			}
+			rawConditionSql = strings.Join(rawConditions, " OR ")
+
+			jsonFields := make([]string, len(l.Fields))
+			for i, field := range l.Fields {
+				jsonFields[i] = fmt.Sprintf(`'%s', COALESCE(NEW."%s", OLD."%s")`, field, field, field)
+			}
+			rawFields = fmt.Sprintf(`JSON_BUILD_OBJECT(%s)::TEXT`, strings.Join(jsonFields, ","))
+		}
+
+		if rawConditionSql == "" {
+			statement = fmt.Sprintf(`
+				CREATE OR REPLACE FUNCTION "%s"."%s"() RETURNS trigger AS $trigger$
+				BEGIN 
+					PERFORM pg_notify('%s', %s);
+					RETURN COALESCE(NEW, OLD);
+				END;
+				$trigger$ LANGUAGE plpgsql VOLATILE;`,
+				d.Config.Schema, triggerFnName, eventName, rawFields)
+		} else {
+			statement = fmt.Sprintf(`
+				CREATE OR REPLACE FUNCTION "%s"."%s"() RETURNS trigger AS $trigger$
+				BEGIN
+					IF %s THEN
+						PERFORM pg_notify('%s', %s);
+					END IF;
+					RETURN COALESCE(NEW, OLD);
+				END;
+				$trigger$ LANGUAGE plpgsql VOLATILE;`,
+				d.Config.Schema, triggerFnName, rawConditionSql, eventName, rawFields)
+		}
+	}
 
 	if operation != "TRUNCATE" {
-		statement += fmt.Sprintf(
-			`CREATE OR REPLACE TRIGGER "%s" BEFORE %s ON %s FOR EACH ROW EXECUTE PROCEDURE "%s"."%s"();`,
-			triggerName,
-			operation,
-			d.sanitizeTableName(l.Table),
-			d.Config.Schema,
-			triggerFnName,
-		)
+		statement += fmt.Sprintf(`
+			CREATE OR REPLACE TRIGGER "%s" BEFORE %s ON %s FOR EACH ROW EXECUTE PROCEDURE "%s"."%s"();`,
+			triggerName, operation, d.sanitizeTableName(l.Table), d.Config.Schema, triggerFnName)
 	} else {
-		statement += fmt.Sprintf(
-			`CREATE OR REPLACE TRIGGER "%s" BEFORE TRUNCATE ON %s FOR EACH STATEMENT EXECUTE PROCEDURE "%s"."%s"();`,
-			triggerName,
-			d.sanitizeTableName(l.Table),
-			d.Config.Schema,
-			triggerFnName,
-		)
+		statement += fmt.Sprintf(`
+			CREATE OR REPLACE TRIGGER "%s" BEFORE TRUNCATE ON %s FOR EACH STATEMENT EXECUTE PROCEDURE "%s"."%s"();`,
+			triggerName, d.sanitizeTableName(l.Table), d.Config.Schema, triggerFnName)
 	}
 
 	return statement, eventName, nil
 }
+
+//func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.ListenerConfig, e *types.Event) (string, string, error) {
+//	uniqueName, err := d.getUniqueIdentifierForListenerEvent(listenerUid, e)
+//	if err != nil {
+//		return "", "", err
+//	}
+//
+//	operation, err := d.getOperationNameForEvent(e)
+//	if err != nil {
+//		return "", "", err
+//	}
+//
+//	triggerName := uniqueName + "_trigger"
+//	triggerFnName := uniqueName + "_fn"
+//	eventName := uniqueName + "_event"
+//
+//	// Create trigger_statement
+//
+//	statement := ""
+//	if len(l.Fields) == 0 {
+//		statement += fmt.Sprintf(`
+//				CREATE OR REPLACE FUNCTION "%s"."%s"() RETURNS trigger AS $trigger$
+//				BEGIN
+//				  PERFORM pg_notify('%s', ROW_TO_JSON(COALESCE(NEW,OLD))::TEXT);
+//				  RETURN COALESCE(NEW, OLD);
+//				END;
+//				$trigger$ LANGUAGE plpgsql VOLATILE;`,
+//			d.Config.Schema, triggerFnName, eventName)
+//	} else {
+//
+//		rawFields := ""
+//		rawConditionSql := ""
+//
+//		if operation == "TRUNCATE" {
+//			rawFields = `null`
+//		} else {
+//
+//			rawConditions := make([]string, len(l.Fields))
+//			for i, field := range l.Fields {
+//				rawConditions[i] = fmt.Sprintf(`OLD."%s" <> NEW."%s"`, field, field)
+//			}
+//			rawConditionSql = strings.Join(rawConditions, " OR ")
+//
+//			jsonFields := make([]string, len(l.Fields))
+//			for idx, field := range l.Fields {
+//				jsonFields[idx] = fmt.Sprintf(`'%s',COALESCE(NEW."%s",OLD."%s")`, field, field, field)
+//			}
+//			rawFields = fmt.Sprintf(`JSON_BUILD_OBJECT(%s)::TEXT`, strings.Join(jsonFields, ","))
+//
+//		}
+//
+//		if rawConditionSql == "" {
+//			statement += fmt.Sprintf(`
+//				CREATE OR REPLACE FUNCTION "%s"."%s"() RETURNS trigger AS $trigger$
+//				BEGIN
+//				  PERFORM pg_notify('%s', %s);
+//				  RETURN COALESCE(NEW,OLD);
+//				END;
+//				$trigger$ LANGUAGE plpgsql VOLATILE;`,
+//				d.Config.Schema, triggerFnName, eventName, rawFields)
+//		} else {
+//			statement += fmt.Sprintf(`
+//				CREATE OR REPLACE FUNCTION "%s"."%s"() RETURNS trigger AS $trigger$
+//				BEGIN
+//				  IF %s THEN
+//				    PERFORM pg_notify('%s', %s);
+//				  END IF;
+//				  RETURN COALESCE(NEW,OLD);
+//				END;
+//				$trigger$ LANGUAGE plpgsql VOLATILE;`,
+//				d.Config.Schema, triggerFnName, rawConditionSql, eventName, rawFields)
+//		}
+//
+//	}
+//	// Create trigger
+//	if operation != "TRUNCATE" {
+//		statement += fmt.Sprintf(
+//			`CREATE OR REPLACE TRIGGER "%s" BEFORE %s ON %s FOR EACH ROW EXECUTE PROCEDURE "%s"."%s"();`,
+//			triggerName,
+//			operation,
+//			d.sanitizeTableName(l.Table),
+//			d.Config.Schema,
+//			triggerFnName,
+//		)
+//	} else {
+//		statement += fmt.Sprintf(
+//			`CREATE OR REPLACE TRIGGER "%s" BEFORE TRUNCATE ON %s FOR EACH STATEMENT EXECUTE PROCEDURE "%s"."%s"();`,
+//			triggerName,
+//			d.sanitizeTableName(l.Table),
+//			d.Config.Schema,
+//			triggerFnName,
+//		)
+//	}
+//
+//	return statement, eventName, nil
+//}
 
 func (d *Driver) getDeleteTriggerSqlForEvent(listenerUid string, l *types.ListenerConfig, e *types.Event) (string, string, error) {
 	uniqueName, err := d.getUniqueIdentifierForListenerEvent(listenerUid, e)
@@ -101,7 +231,6 @@ func (d *Driver) getEventForOperationName(operationName string) (types.Event, er
 	}
 	return event, nil
 }
-
 func (d *Driver) getUniqueIdentifierForListenerEvent(listenerUid string, e *types.Event) (string, error) {
 	operationName, err := d.getOperationNameForEvent(e)
 	if err != nil {
@@ -113,7 +242,6 @@ func (d *Driver) getUniqueIdentifierForListenerEvent(listenerUid string, e *type
 		strings.ToLower(operationName),
 	}, "_"), nil
 }
-
 func (d *Driver) parseEventName(channel string) (string, types.Event, error) {
 	parts := strings.Split(channel, "_")
 	if len(parts) != 4 {
@@ -129,7 +257,6 @@ func (d *Driver) parseEventName(channel string) (string, types.Event, error) {
 	return listenerUid, event, nil
 
 }
-
 func (d *Driver) sanitizeTableName(tableName string) string {
 	segments := strings.Split(tableName, ".")
 	for i, segment := range segments {
@@ -137,7 +264,6 @@ func (d *Driver) sanitizeTableName(tableName string) string {
 	}
 	return strings.Join(segments, ".")
 }
-
 func (d *Driver) sqlExec(conn *pgx.Conn, query string) (pgconn.CommandTag, error) {
 	d._clientConfig.Logger.Trace().Str("query", query).Msg("sending sql request")
 	return conn.Exec(context.TODO(), query)

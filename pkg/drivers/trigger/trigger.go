@@ -148,9 +148,12 @@ func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
 				errChan <- err
 			}
 
-			var data map[string]interface{}
-			if err := json.Unmarshal([]byte(receivedEvent.Payload), &data); err != nil {
-				errChan <- err
+			var data any = nil
+			if receivedEvent.Payload != "" {
+				data = make(map[string]any)
+				if err := json.Unmarshal([]byte(receivedEvent.Payload), &data); err != nil {
+					errChan <- err
+				}
 			}
 
 			*eventsChan <- &types.DatabaseEvent{
