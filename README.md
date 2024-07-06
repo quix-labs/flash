@@ -72,6 +72,7 @@ func main() {
 For more detailed examples, check out the following files:
 
 - [Debug queries](examples/debug_trace/debug_trace.go)
+- [Trigger insert events on table](examples/trigger_insert/trigger_insert.go)
 - [Trigger all events on table](examples/trigger_all/trigger_all.go)
 - [Listen for specific fields](examples/specific_fields/specific_fields.go)
 
