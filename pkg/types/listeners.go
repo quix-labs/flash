@@ -1,7 +1,8 @@
 package types
 
 type ListenerConfig struct {
-	Table string
+	Table  string   // Can be prefixed by schema - e.g: public.posts
+	Fields []string // Empty fields means all ( SELECT * )
 }
 
 type Event uint8
@@ -18,5 +19,5 @@ const (
 type EventCallback func(event *ReceivedEvent)
 type ReceivedEvent struct {
 	Event Event
-	Data  any //TODO
+	Data  any //TODO CUSTOM TYPE
 }
