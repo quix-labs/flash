@@ -84,7 +84,8 @@ The following features are planned for future implementation:
 - [x] Driver interfaces for creating new drivers.
 - [ ] Listen for changes in specific columns, not the entire table.
 - [ ] Soft-delete support: receive delete events when SQL condition is respected. Example: `deleted_at IS NOT NULL`.
-- [ ] New driver that uses logical replication. See [DRIVERS.md](pkg/drivers/DRIVERS.md)
+- [ ] More performant driver. See [DRIVERS.md](pkg/drivers/DRIVERS.md)
+- [ ] Tests implementation
 - ... any feedback is welcome.
 
 ## Additional Details
