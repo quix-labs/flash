@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"github.com/quix-labs/flash/pkg/drivers/trigger"
 	"github.com/quix-labs/flash/pkg/listeners"
@@ -11,12 +12,12 @@ import (
 	"sync"
 )
 
-func NewClient(config *types.ClientConfig) *Client {
+func NewClient(config *types.ClientConfig) (*Client, error) {
 	if config == nil {
 		config = &types.ClientConfig{}
 	}
 	if config.DatabaseCnx == "" {
-		panic("database connection required") //TODO Error handling
+		return nil, errors.New("database connection required")
 	}
 	if config.Driver == nil {
 		config.Driver = trigger.NewDriver(nil)
@@ -28,7 +29,7 @@ func NewClient(config *types.ClientConfig) *Client {
 	return &Client{
 		Config:    config,
 		listeners: make(map[string]*listeners.Listener),
-	}
+	}, nil
 }
 
 type Client struct {
@@ -105,30 +106,35 @@ func (c *Client) Init() error {
 	return nil
 }
 
-func (c *Client) Close() {
+func (c *Client) Close() error {
 	var wg sync.WaitGroup
 
 	c.Config.Logger.Debug().Msg("Closing listeners")
 
 	// Remove listeners (parallel)
-	errChan := make(chan error)
 	for _, l := range c.listeners {
 		wg.Add(1)
+		errChan := make(chan error)
 		listener := l // Keep copy to avoid invalid reference due to for loop
 		go func() {
 			defer wg.Done()
-			if err := listener.Close(); err != nil {
-				errChan <- err
-			}
+			errChan <- listener.Close()
 		}()
+		err := <-errChan
+		if err != nil {
+			return err
+		}
 	}
-	//TODO HANDLE ERROR IN errChan
 	wg.Wait()
 	c.Config.Logger.Debug().Msg("Listeners closed")
 
 	c.Config.Logger.Debug().Msg("Closing driver")
-	_ = c.Config.Driver.Close()
+	err := c.Config.Driver.Close()
+	if err != nil {
+		return err
+	}
 	c.Config.Logger.Debug().Msg("Driver closed")
+	return nil
 }
 
 func (c *Client) getUniqueNameForListener(lc *listeners.Listener) string {

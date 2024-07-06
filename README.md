@@ -36,6 +36,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/quix-labs/flash/pkg/listeners"
 	"os"
 	"os/signal"
 
@@ -53,7 +54,7 @@ func main() {
 
 	// Create client
 	clientConfig := &types.ClientConfig{DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb"}
-	flashClient := client.NewClient(clientConfig)
+	flashClient, _ := client.NewClient(clientConfig)
 	flashClient.Attach(postsListener)
 
 	// Start listening
@@ -67,6 +68,7 @@ func main() {
 
 	fmt.Println("Program terminated.")
 }
+
 ```
 
 For more detailed examples, check out the following files:

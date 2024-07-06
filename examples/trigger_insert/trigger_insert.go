@@ -21,7 +21,7 @@ func main() {
 	defer stop()
 
 	clientConfig := &types.ClientConfig{DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb"}
-	flashClient := client.NewClient(clientConfig)
+	flashClient, _ := client.NewClient(clientConfig)
 	flashClient.Attach(postsListener)
 	go flashClient.Start() // Error Handling
 	defer flashClient.Close()

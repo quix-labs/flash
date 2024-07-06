@@ -18,7 +18,7 @@ func main() {
 
 	// Create client
 	clientConfig := &types.ClientConfig{DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb"}
-	flashClient := client.NewClient(clientConfig)
+	flashClient, _ := client.NewClient(clientConfig)
 	flashClient.Attach(postsListener)
 
 	go func() {

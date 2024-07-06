@@ -148,9 +148,9 @@ func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
 				errChan <- err
 			}
 
-			var data any = nil
+			var data types.EventData = nil
 			if receivedEvent.Payload != "" {
-				data = make(map[string]any)
+				data = make(types.EventData)
 				if err := json.Unmarshal([]byte(receivedEvent.Payload), &data); err != nil {
 					errChan <- err
 				}
@@ -160,7 +160,7 @@ func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
 				ListenerUid: listenerUid,
 				ReceivedEvent: &types.ReceivedEvent{
 					Event: event,
-					Data:  data,
+					Data:  &data,
 				},
 			}
 		}

@@ -6,5 +6,5 @@ type Driver interface {
 
 	HandleEventListenStart(listenerUid string, listenerConfig *ListenerConfig, event *Event) error
 	HandleEventListenStop(listenerUid string, listenerConfig *ListenerConfig, event *Event) error
-	Listen(eventsChan *DatabaseEventsChan) error //TODO EVENT CHANNEL
+	Listen(eventsChan *DatabaseEventsChan) error
 }

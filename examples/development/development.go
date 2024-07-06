@@ -34,7 +34,7 @@ func main() {
 		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
 		Logger:      &logger, // Define your custom zerolog.Logger here
 	}
-	flashClient := client.NewClient(clientConfig)
+	flashClient, _ := client.NewClient(clientConfig)
 	flashClient.Attach(postsListener)
 
 	// Start listening

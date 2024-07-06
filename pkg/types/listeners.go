@@ -16,8 +16,10 @@ const (
 	EventsAll = EventInsert | EventUpdate | EventDelete | EventTruncate
 )
 
+type EventData map[string]any
+
 type EventCallback func(event *ReceivedEvent)
 type ReceivedEvent struct {
 	Event Event
-	Data  any //TODO CUSTOM TYPE
+	Data  *EventData
 }
