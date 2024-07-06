@@ -74,14 +74,17 @@ For more detailed examples, check out the following files:
 - [Debug queries](examples/debug_trace/debug_trace.go)
 - [Trigger all events on table](examples/trigger_all/trigger_all.go)
 
+## Drivers
+You can see all drivers details [here](pkg/drivers/DRIVERS.md)
+
 ## Planned Features
 
 The following features are planned for future implementation:
 
-- Listen for changes in specific columns, not the entire table.
-- Soft-delete support: receive delete events when SQL condition is respected. Example: `deleted_at IS NOT NULL`.
-- Driver interfaces for creating new drivers.
-- New driver that uses logical replication.
+- [x] Driver interfaces for creating new drivers.
+- [ ] Listen for changes in specific columns, not the entire table.
+- [ ] Soft-delete support: receive delete events when SQL condition is respected. Example: `deleted_at IS NOT NULL`.
+- [ ] New driver that uses logical replication. See [DRIVERS.md](pkg/drivers/DRIVERS.md)
 - ... any feedback is welcome.
 
 
