@@ -24,19 +24,31 @@ func (d *Driver) getCreateTriggerSqlForEvent(l *types.ListenerConfig, e *types.E
 	statement := fmt.Sprintf(`
 CREATE OR REPLACE FUNCTION "%s"."%s"() RETURNS trigger AS $trigger$
 BEGIN 
-  PERFORM pg_notify('%s', ROW_TO_JSON(COALESCE(NEW,OLD)));
+  PERFORM pg_notify('%s', ROW_TO_JSON(COALESCE(NEW,OLD))::TEXT);
   RETURN COALESCE(NEW, OLD);
 END;
 $trigger$ LANGUAGE plpgsql VOLATILE;`,
 		d.Config.Schema, triggerFnName, uniqueName)
-	statement += fmt.Sprintf(
-		`CREATE OR REPLACE TRIGGER "%s" BEFORE %s ON %s FOR EACH ROW EXECUTE PROCEDURE "%s"."%s"();`,
-		triggerName,
-		operation,
-		l.Table,
-		d.Config.Schema,
-		triggerFnName,
-	)
+
+	if operation != "TRUNCATE" {
+		statement += fmt.Sprintf(
+			`CREATE OR REPLACE TRIGGER "%s" BEFORE %s ON %s FOR EACH ROW EXECUTE PROCEDURE "%s"."%s"();`,
+			triggerName,
+			operation,
+			l.Table,
+			d.Config.Schema,
+			triggerFnName,
+		)
+	} else {
+		statement += fmt.Sprintf(
+			`CREATE OR REPLACE TRIGGER "%s" BEFORE TRUNCATE ON %s FOR EACH STATEMENT EXECUTE PROCEDURE "%s"."%s"();`,
+			triggerName,
+			l.Table,
+			d.Config.Schema,
+			triggerFnName,
+		)
+	}
+
 	return statement, nil
 }
 
@@ -68,6 +80,7 @@ func (d *Driver) getOperationNameForEvent(e *types.Event) (string, error) {
 }
 
 func (d *Driver) getUniqueIdentifierForListenerEvent(l *types.ListenerConfig, e *types.Event) (string, error) {
+
 	operationName, err := d.getOperationNameForEvent(e)
 	if err != nil {
 		return "", err

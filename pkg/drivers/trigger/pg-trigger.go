@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"context"
+	"fmt"
 	"github.com/jackc/pgx/v5"
 	"github.com/quix-labs/flash/pkg/types"
 )
@@ -30,6 +31,31 @@ type Driver struct {
 	_clientConfig *types.ClientConfig
 }
 
+func (d *Driver) HandleEventListenStart(lc *types.ListenerConfig, event *types.Event) error {
+	createTriggerSql, err := d.getCreateTriggerSqlForEvent(lc, event)
+	if err != nil {
+		return err
+	}
+	_, err = d.conn.Exec(context.TODO(), createTriggerSql)
+	if err != nil {
+		fmt.Println(err)
+		return err
+	}
+	return nil
+}
+
+func (d *Driver) HandleEventListenStop(lc *types.ListenerConfig, event *types.Event) error {
+	createTriggerSql, err := d.getDeleteTriggerSqlForEvent(lc, event)
+	if err != nil {
+		return err
+	}
+	_, err = d.conn.Exec(context.TODO(), createTriggerSql)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (d *Driver) Init(_clientConfig *types.ClientConfig) error {
 	d._clientConfig = _clientConfig
 
@@ -46,27 +72,8 @@ func (d *Driver) Init(_clientConfig *types.ClientConfig) error {
 	return nil
 }
 
-func (d *Driver) HandleEventListenStart(lc *types.ListenerConfig, event *types.Event) error {
-	createTriggerSql, err := d.getCreateTriggerSqlForEvent(lc, event)
-	if err != nil {
-		return err
-	}
-	_, err = d.conn.Exec(context.TODO(), createTriggerSql)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (d *Driver) HandleEventListenStop(lc *types.ListenerConfig, event *types.Event) error {
-	createTriggerSql, err := d.getDeleteTriggerSqlForEvent(lc, event)
-	if err != nil {
-		return err
-	}
-	_, err = d.conn.Exec(context.TODO(), createTriggerSql)
-	if err != nil {
-		return err
-	}
+func (d *Driver) Listen() error {
+	//TODO EVENT CHANNEL
 	return nil
 }
 

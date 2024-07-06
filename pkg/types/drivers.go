@@ -6,4 +6,5 @@ type Driver interface {
 
 	HandleEventListenStart(*ListenerConfig, *Event) error
 	HandleEventListenStop(*ListenerConfig, *Event) error
+	Listen() error //TODO EVENT CHANNEL
 }

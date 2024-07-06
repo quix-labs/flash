@@ -12,7 +12,7 @@ func main() {
 	postsListener := client.NewListener(&types.ListenerConfig{
 		Table: "posts",
 	})
-	stop, _ := postsListener.On(types.EventUpdate^types.EventDelete, func(event types.Event) {
+	stop, _ := postsListener.On(types.EventsAll, func(event types.Event) {
 		fmt.Println("Event received All" + string(event))
 	})
 	defer stop()
