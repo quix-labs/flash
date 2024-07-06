@@ -87,6 +87,10 @@ The following features are planned for future implementation:
 - [ ] New driver that uses logical replication. See [DRIVERS.md](pkg/drivers/DRIVERS.md)
 - ... any feedback is welcome.
 
+## Additional Details
+
+You can find a temporary workflow graph [here](WORKFLOW.md).
+
 
 ## Contributing
 
