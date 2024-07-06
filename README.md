@@ -82,7 +82,7 @@ You can see all drivers details [here](pkg/drivers/DRIVERS.md)
 The following features are planned for future implementation:
 
 - [x] Driver interfaces for creating new drivers.
-- [ ] Listen for changes in specific columns, not the entire table.
+- [ ] Listen for changes in specific columns, not the entire row.
 - [ ] Soft-delete support: receive delete events when SQL condition is respected. Example: `deleted_at IS NOT NULL`.
 - [ ] More performant driver. See [DRIVERS.md](pkg/drivers/DRIVERS.md)
 - [ ] Tests implementation
