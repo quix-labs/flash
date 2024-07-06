@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	"github.com/quix-labs/flash/pkg/types"
@@ -19,41 +20,48 @@ func NewDriver(config *DriverConfig) *Driver {
 		config.Schema = "flash"
 	}
 	return &Driver{
-		Config: config,
+		Config:       config,
+		activeEvents: make(map[string]bool),
 	}
 }
 
 type Driver struct {
 	Config *DriverConfig
 
-	conn *pgx.Conn
+	conn       *pgx.Conn
+	listenConn *pgx.Conn
+	subChan    chan string
+	unsubChan  chan string
+
+	activeEvents map[string]bool
 
 	_clientConfig *types.ClientConfig
 }
 
-func (d *Driver) HandleEventListenStart(lc *types.ListenerConfig, event *types.Event) error {
-	createTriggerSql, err := d.getCreateTriggerSqlForEvent(lc, event)
+func (d *Driver) HandleEventListenStart(listenerUid string, lc *types.ListenerConfig, event *types.Event) error {
+	createTriggerSql, eventName, err := d.getCreateTriggerSqlForEvent(listenerUid, lc, event)
 	if err != nil {
 		return err
 	}
-	_, err = d.conn.Exec(context.TODO(), createTriggerSql)
+	_, err = d.sqlExec(d.conn, createTriggerSql)
 	if err != nil {
-		fmt.Println(err)
 		return err
 	}
-	return nil
+
+	return d.addEventToListened(eventName)
 }
 
-func (d *Driver) HandleEventListenStop(lc *types.ListenerConfig, event *types.Event) error {
-	createTriggerSql, err := d.getDeleteTriggerSqlForEvent(lc, event)
+func (d *Driver) HandleEventListenStop(listenerUid string, lc *types.ListenerConfig, event *types.Event) error {
+	createTriggerSql, eventName, err := d.getDeleteTriggerSqlForEvent(listenerUid, lc, event)
 	if err != nil {
 		return err
 	}
-	_, err = d.conn.Exec(context.TODO(), createTriggerSql)
+	_, err = d.sqlExec(d.conn, createTriggerSql)
 	if err != nil {
 		return err
 	}
-	return nil
+
+	return d.removeEventToListened(eventName)
 }
 
 func (d *Driver) Init(_clientConfig *types.ClientConfig) error {
@@ -65,21 +73,122 @@ func (d *Driver) Init(_clientConfig *types.ClientConfig) error {
 	}
 
 	// Create schema if not exists
-	if _, err := d.conn.Exec(context.TODO(), "CREATE SCHEMA IF NOT EXISTS "+d.Config.Schema+";"); err != nil {
+	if _, err := d.sqlExec(d.conn, "CREATE SCHEMA IF NOT EXISTS "+d.Config.Schema+";"); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (d *Driver) Listen() error {
-	//TODO EVENT CHANNEL
+func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
+	var err error
+	if d.listenConn, err = pgx.Connect(context.TODO(), d._clientConfig.DatabaseCnx); err != nil {
+		return err
+	}
+
+	d.subChan = make(chan string)
+	d.unsubChan = make(chan string)
+	errChan := make(chan error)
+
+	// Needed because cannot execute LISTEN, UNLISTEN when WaitForNotification is running
+	pausedChan := make(chan bool)
+	resumeChan := make(chan bool)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		for {
+			select {
+			case eventName := <-d.subChan:
+				cancel()
+				<-pausedChan // Wait for paused confirmation
+				_, err = d.sqlExec(d.listenConn, fmt.Sprintf(`LISTEN "%s"`, eventName))
+				if err != nil {
+					errChan <- err
+					return
+				}
+				ctx, cancel = context.WithCancel(context.Background()) // Recreate unclosed context
+				resumeChan <- true
+
+			case eventName := <-d.unsubChan:
+				cancel()
+				<-pausedChan // Wait for paused confirmation
+				_, err = d.sqlExec(d.listenConn, fmt.Sprintf(`UNLISTEN "%s"`, eventName))
+				if err != nil {
+					errChan <- err
+					return
+				}
+				ctx, cancel = context.WithCancel(context.Background()) // Recreate unclosed context
+				resumeChan <- true
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			receivedEvent, err := d.listenConn.WaitForNotification(ctx)
+			if err != nil {
+				if errors.Is(ctx.Err(), context.Canceled) {
+					pausedChan <- true
+					<-resumeChan // Wait for resume signal before restart
+				} else {
+					errChan <- err
+				}
+				continue
+			}
+
+			//TODO PARSE PAYLOAD
+
+			listenerUid, event, _ := d.parseEventName(receivedEvent.Channel)
+			if err != nil {
+				errChan <- err
+			}
+			*eventsChan <- &types.DatabaseEvent{
+				ListenerUid: listenerUid,
+				ReceivedEvent: &types.ReceivedEvent{
+					Event: event,
+					Data:  receivedEvent.Payload,
+				},
+			}
+		}
+	}()
+
+	go func() {
+		// Bootstrap activeEvents on first boot
+		for eventName := range d.activeEvents {
+			d.subChan <- eventName
+		}
+	}()
+
+	return <-errChan
+}
+
+func (d *Driver) addEventToListened(eventName string) error {
+	d.activeEvents[eventName] = true
+
+	if d.listenConn == nil {
+		return nil
+	}
+
+	d.subChan <- eventName
+
+	return nil
+}
+
+func (d *Driver) removeEventToListened(eventName string) error {
+	delete(d.activeEvents, eventName)
+
+	if d.listenConn == nil {
+		return nil
+	}
+	d.unsubChan <- eventName
+
 	return nil
 }
 
 func (d *Driver) Close() error {
 	// Drop created schema
-	if _, err := d.conn.Exec(context.TODO(), "DROP SCHEMA IF EXISTS "+d.Config.Schema+";"); err != nil {
+	if _, err := d.sqlExec(d.conn, "DROP SCHEMA IF EXISTS "+d.Config.Schema+";"); err != nil {
 		return err
 	}
 

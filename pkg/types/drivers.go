@@ -1,10 +1,10 @@
 package types
 
 type Driver interface {
-	Init(*ClientConfig) error
+	Init(clientConfig *ClientConfig) error
 	Close() error
 
-	HandleEventListenStart(*ListenerConfig, *Event) error
-	HandleEventListenStop(*ListenerConfig, *Event) error
-	Listen() error //TODO EVENT CHANNEL
+	HandleEventListenStart(listenerUid string, listenerConfig *ListenerConfig, event *Event) error
+	HandleEventListenStop(listenerUid string, listenerConfig *ListenerConfig, event *Event) error
+	Listen(eventsChan *DatabaseEventsChan) error //TODO EVENT CHANNEL
 }

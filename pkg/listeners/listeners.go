@@ -1,11 +1,9 @@
-package client
+package listeners
 
 import (
 	"errors"
 	"github.com/quix-labs/flash/pkg/types"
 )
-
-type EventCallback func(event types.Event)
 
 func NewListener(config *types.ListenerConfig) *Listener {
 	if config == nil {
@@ -14,7 +12,7 @@ func NewListener(config *types.ListenerConfig) *Listener {
 
 	return &Listener{
 		Config:    config,
-		callbacks: make(map[*EventCallback]types.Event),
+		callbacks: make(map[*types.EventCallback]types.Event),
 	}
 }
 
@@ -24,7 +22,7 @@ type Listener struct {
 	Config *types.ListenerConfig
 
 	// Internals
-	callbacks      map[*EventCallback]types.Event
+	callbacks      map[*types.EventCallback]types.Event
 	listenedEvents types.Event // Use bitwise comparison to check for listened events
 
 	// Trigger client
@@ -35,7 +33,7 @@ type Listener struct {
 
 /* Callback management */
 
-func (l *Listener) On(event types.Event, callback EventCallback) (func() error, error) {
+func (l *Listener) On(event types.Event, callback types.EventCallback) (func() error, error) {
 	if callback == nil {
 		return nil, errors.New("callback cannot be nil")
 	}
@@ -57,9 +55,9 @@ func (l *Listener) On(event types.Event, callback EventCallback) (func() error, 
 	return removeFunc, nil
 }
 
-func (l *Listener) Dispatch(event types.Event) {
+func (l *Listener) Dispatch(event *types.ReceivedEvent) {
 	for mask := types.Event(1); mask != 0 && mask <= types.EventsAll; mask <<= 1 {
-		if event&mask == 0 {
+		if event.Event&mask == 0 {
 			continue
 		}
 
@@ -69,7 +67,7 @@ func (l *Listener) Dispatch(event types.Event) {
 
 		for callback, listens := range l.callbacks {
 			if listens&mask > 0 {
-				(*callback)(mask)
+				(*callback)(event)
 			}
 		}
 	}

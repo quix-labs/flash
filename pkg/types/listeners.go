@@ -14,3 +14,9 @@ const (
 
 	EventsAll = EventInsert | EventUpdate | EventDelete | EventTruncate
 )
+
+type EventCallback func(event *ReceivedEvent)
+type ReceivedEvent struct {
+	Event Event
+	Data  any //TODO
+}

@@ -3,22 +3,31 @@ package main
 import (
 	"fmt"
 	"github.com/quix-labs/flash/pkg/client"
+	"github.com/quix-labs/flash/pkg/listeners"
 	"github.com/quix-labs/flash/pkg/types"
+	"github.com/rs/zerolog"
 	"os"
 	"os/signal"
+	"syscall"
+	"time"
 )
 
 func main() {
-	postsListener := client.NewListener(&types.ListenerConfig{
-		Table: "posts",
+	postsListener := listeners.NewListener(&types.ListenerConfig{
+		Table: "public.posts",
 	})
-	stop, _ := postsListener.On(types.EventsAll, func(event types.Event) {
-		fmt.Println("Event received All" + string(event))
+	stopAll, err := postsListener.On(types.EventsAll, func(event *types.ReceivedEvent) {
+		fmt.Printf("Event received: %d\n", event)
 	})
-	defer stop()
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer stopAll()
 
+	logger := zerolog.New(os.Stdout).Level(zerolog.TraceLevel).With().Stack().Timestamp().Logger()
 	flashClient := client.NewClient(&types.ClientConfig{
 		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
+		Logger:      &logger,
 	})
 	flashClient.AddListener(postsListener)
 	go func() {
@@ -29,9 +38,20 @@ func main() {
 		}
 	}()
 	defer flashClient.Close()
+	//
+	time.Sleep(time.Second * 5)
+	fmt.Println("stopAll")
+	err = stopAll()
+	fmt.Println(err)
+
+	stopOther, err := postsListener.On(types.EventUpdate^types.EventInsert, func(event *types.ReceivedEvent) {
+		fmt.Println("Event received")
+	})
+	defer stopOther()
 	// Wait for interrupt signal (Ctrl+C)
+
 	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	<-interrupt
 
 	fmt.Println("Program terminated.")
