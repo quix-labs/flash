@@ -6,15 +6,24 @@ import (
 	"sync"
 )
 
-func NewListener(config *types.ListenerConfig) *Listener {
+func NewListener(config *types.ListenerConfig) (*Listener, error) {
 	if config == nil {
-		panic("config is nil")
+		return nil, errors.New("config cannot be nil")
+	}
+	if config.MaxParallelProcess == 0 {
+		config.MaxParallelProcess = 1
+	}
+
+	var semaphore chan struct{} = nil
+	if config.MaxParallelProcess != -1 {
+		semaphore = make(chan struct{}, config.MaxParallelProcess)
 	}
 
 	return &Listener{
 		Config:    config,
 		callbacks: make(map[*types.EventCallback]types.Event),
-	}
+		semaphore: semaphore,
+	}, nil
 }
 
 type CreateEventCallback func(event types.Event) error
@@ -26,6 +35,7 @@ type Listener struct {
 	sync.Mutex
 	callbacks      map[*types.EventCallback]types.Event
 	listenedEvents types.Event // Use bitwise comparison to check for listened events
+	semaphore      chan struct{}
 
 	// Trigger client
 	_clientCreateEventCallback CreateEventCallback
@@ -51,6 +61,7 @@ func (l *Listener) On(event types.Event, callback types.EventCallback) (func() e
 		if err := l.removeListenedEventIfNeeded(event); err != nil {
 			return err
 		}
+		callback = nil
 		return nil
 	}
 
@@ -69,7 +80,23 @@ func (l *Listener) Dispatch(event *types.ReceivedEvent) {
 
 		for callback, listens := range l.callbacks {
 			if listens&mask > 0 {
-				(*callback)(event)
+				if l.Config.MaxParallelProcess == -1 {
+					go (*callback)(event)
+					continue
+				}
+
+				// Acquire semaphore
+				l.semaphore <- struct{}{}
+				if l.Config.MaxParallelProcess == 1 {
+					(*callback)(event)
+					<-l.semaphore
+					continue
+				}
+
+				go func() {
+					(*callback)(event)
+					<-l.semaphore
+				}()
 			}
 		}
 	}
@@ -97,26 +124,6 @@ func (l *Listener) Init(_createCallback CreateEventCallback, _deleteCallback Del
 	return nil
 }
 
-func (l *Listener) Close() error {
-
-	if !l._clientInitialized {
-		return nil
-	}
-
-	// Emit all events for initialization
-	for targetEvent := types.Event(1); targetEvent != 0 && targetEvent <= types.EventsAll; targetEvent <<= 1 {
-		if l.listenedEvents&targetEvent == 0 {
-			continue
-		}
-		if err := l._clientDeleteEventCallback(targetEvent); err != nil {
-			return err
-		}
-	}
-
-	l._clientInitialized = false
-	return nil
-}
-
 func (l *Listener) addListenedEventIfNeeded(event types.Event) error {
 
 	initialEvents := l.listenedEvents
@@ -129,12 +136,14 @@ func (l *Listener) addListenedEventIfNeeded(event types.Event) error {
 	}
 
 	for targetEvent := types.Event(1); targetEvent != 0 && targetEvent <= types.EventsAll; targetEvent <<= 1 {
-		if !l._clientInitialized || targetEvent&diff == 0 || targetEvent&event == 0 {
+		if targetEvent&diff == 0 || targetEvent&event == 0 {
 			continue
 		}
 		l.Lock()
-		if err := l._clientCreateEventCallback(targetEvent); err != nil {
-			return err
+		if l._clientInitialized {
+			if err := l._clientCreateEventCallback(targetEvent); err != nil {
+				return err
+			}
 		}
 		l.Unlock()
 	}
@@ -164,6 +173,12 @@ func (l *Listener) removeListenedEventIfNeeded(event types.Event) error {
 	return nil
 }
 
+func (l *Listener) Close() error {
+	l.Lock()
+	defer l.Unlock()
+	l._clientInitialized = false
+	return nil
+}
 func (l *Listener) hasListenersForEvent(event types.Event) bool {
 	for _, listens := range l.callbacks {
 		if listens&event > 0 {

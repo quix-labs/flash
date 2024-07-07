@@ -1,12 +1,11 @@
 package trigger
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
+	"database/sql"
 	"fmt"
-	"github.com/jackc/pgx/v5"
+	"github.com/lib/pq"
 	"github.com/quix-labs/flash/pkg/types"
+	"time"
 )
 
 type DriverConfig struct {
@@ -29,13 +28,14 @@ func NewDriver(config *DriverConfig) *Driver {
 type Driver struct {
 	Config *DriverConfig
 
-	conn       *pgx.Conn
-	listenConn *pgx.Conn
-	subChan    chan string
-	unsubChan  chan string
+	conn       *sql.DB
+	pgListener *pq.Listener
 
-	activeEvents map[string]bool
+	subChan   chan string
+	unsubChan chan string
+	shutdown  chan bool
 
+	activeEvents  map[string]bool
 	_clientConfig *types.ClientConfig
 }
 
@@ -68,93 +68,78 @@ func (d *Driver) HandleEventListenStop(listenerUid string, lc *types.ListenerCon
 func (d *Driver) Init(_clientConfig *types.ClientConfig) error {
 	d._clientConfig = _clientConfig
 
-	var err error
-	if d.conn, err = pgx.Connect(context.TODO(), d._clientConfig.DatabaseCnx); err != nil {
+	connector, err := pq.NewConnector(d._clientConfig.DatabaseCnx + "?application_name=test&sslmode=disable")
+	if err != nil {
 		return err
 	}
 
+	d.conn = sql.OpenDB(connector)
 	// Create schema if not exists
-	if _, err := d.sqlExec(d.conn, "CREATE SCHEMA IF NOT EXISTS "+d.Config.Schema+";"); err != nil {
+	if _, err := d.sqlExec(d.conn, "CREATE SCHEMA IF NOT EXISTS \""+d.Config.Schema+"\";"); err != nil {
 		return err
 	}
-
 	return nil
 }
 
 func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
-	var err error
-	if d.listenConn, err = pgx.Connect(context.TODO(), d._clientConfig.DatabaseCnx); err != nil {
-		return err
-	}
-
+	errChan := make(chan error)
 	d.subChan = make(chan string, len(d.activeEvents))
 	d.unsubChan = make(chan string, 1)
+	d.shutdown = make(chan bool)
 
-	// Initialize subChan with activeEvents in queue
-	for eventName := range d.activeEvents {
-		d.subChan <- eventName
+	reportProblem := func(ev pq.ListenerEventType, err error) {
+		if err != nil {
+			errChan <- err
+		}
 	}
 
-	// Needed because cannot execute LISTEN, UNLISTEN when WaitForNotification is running
-	pausedChan := make(chan bool, 1)
-	resumeChan := make(chan bool, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	d.pgListener = pq.NewListener(d._clientConfig.DatabaseCnx+"?application_name=test_listen&sslmode=disable", 1*time.Second, time.Minute, reportProblem)
 
-	errChan := make(chan error, 1)
+	// Initialize subChan with activeEvents in queue
 	go func() {
-		for {
-			select {
-			case eventName := <-d.subChan:
-				cancel()
-				<-pausedChan // Wait for paused confirmation
-				_, err = d.sqlExec(d.listenConn, fmt.Sprintf(`LISTEN "%s"`, eventName))
-				if err != nil {
-					errChan <- err
-					return
-				}
-				ctx, cancel = context.WithCancel(context.Background()) // Recreate unclosed context
-				resumeChan <- true
-
-			case eventName := <-d.unsubChan:
-				cancel()
-				<-pausedChan // Wait for paused confirmation
-				_, err = d.sqlExec(d.listenConn, fmt.Sprintf(`UNLISTEN "%s"`, eventName))
-				if err != nil {
-					errChan <- err
-					return
-				}
-				ctx, cancel = context.WithCancel(context.Background()) // Recreate unclosed context
-				resumeChan <- true
-			}
+		for eventName := range d.activeEvents {
+			d.subChan <- eventName
 		}
 	}()
 
-	go func() {
-		for {
-			receivedEvent, err := d.listenConn.WaitForNotification(ctx)
-			if err != nil {
-				if errors.Is(ctx.Err(), context.Canceled) {
-					pausedChan <- true
-					<-resumeChan // Wait for resume signal before restart
-				} else {
-					errChan <- err
-				}
-				continue
-			}
+	for {
+		select {
 
-			listenerUid, event, _ := d.parseEventName(receivedEvent.Channel)
+		case <-d.shutdown:
+			return d.pgListener.Close()
+
+		case err := <-errChan:
+			return err
+
+		case eventName := <-d.unsubChan:
+			d._clientConfig.Logger.Trace().Str("query", fmt.Sprintf(`UNLISTEN "%s"`, eventName)).Msg("sending sql request")
+			if err := d.pgListener.Unlisten(eventName); err != nil {
+				return err
+			}
+			fmt.Println("UNLISTENED")
+			continue
+
+		case eventName := <-d.subChan:
+			d._clientConfig.Logger.Trace().Str("query", fmt.Sprintf(`LISTEN "%s"`, eventName)).Msg("sending sql request")
+			if err := d.pgListener.Listen(eventName); err != nil {
+				return err
+			}
+			continue
+
+		case notification := <-d.pgListener.Notify:
+			listenerUid, event, err := d.parseEventName(notification.Channel)
 			if err != nil {
 				errChan <- err
+				continue
 			}
-
-			var data types.EventData = nil
-			if receivedEvent.Payload != "" {
-				data = make(types.EventData)
-				if err := json.Unmarshal([]byte(receivedEvent.Payload), &data); err != nil {
-					errChan <- err
-				}
-			}
+			var data types.EventData
+			//if notification.Extra != "" {
+			//	data = make(types.EventData)
+			//	if err := json.Unmarshal([]byte(notification.Extra), &data); err != nil {
+			//		errChan <- err
+			//		continue
+			//	}
+			//}
 
 			*eventsChan <- &types.DatabaseEvent{
 				ListenerUid: listenerUid,
@@ -164,15 +149,13 @@ func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
 				},
 			}
 		}
-	}()
-
-	return <-errChan
+	}
 }
 
 func (d *Driver) addEventToListened(eventName string) error {
 	d.activeEvents[eventName] = true
 
-	if d.listenConn == nil {
+	if d.pgListener == nil {
 		return nil
 	}
 
@@ -184,7 +167,7 @@ func (d *Driver) addEventToListened(eventName string) error {
 func (d *Driver) removeEventToListened(eventName string) error {
 	delete(d.activeEvents, eventName)
 
-	if d.listenConn == nil {
+	if d.pgListener == nil {
 		return nil
 	}
 	d.unsubChan <- eventName
@@ -193,14 +176,18 @@ func (d *Driver) removeEventToListened(eventName string) error {
 }
 
 func (d *Driver) Close() error {
+	if d.pgListener != nil {
+		d.shutdown <- true
+	}
+
 	// Drop created schema
-	if _, err := d.sqlExec(d.conn, "DROP SCHEMA IF EXISTS "+d.Config.Schema+";"); err != nil {
+	if _, err := d.sqlExec(d.conn, "DROP SCHEMA IF EXISTS \""+d.Config.Schema+"\" CASCADE;"); err != nil {
 		return err
 	}
 
 	// Close active connection
 	if d.conn != nil {
-		if err := d.conn.Close(context.Background()); err != nil {
+		if err := d.conn.Close(); err != nil {
 			return err
 		}
 	}

@@ -1,9 +1,11 @@
 package trigger
 
 import (
-	"database/sql"
+	"context"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/quix-labs/flash/pkg/types"
 	"strings"
 )
@@ -36,34 +38,20 @@ func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.Listen
 	} else {
 		var rawFields, rawConditionSql string
 
-		switch operation {
-		case "TRUNCATE":
+		if operation == "TRUNCATE" {
 			rawFields = "null"
-		case "DELETE":
-			jsonFields := make([]string, len(l.Fields))
-			for i, field := range l.Fields {
-				jsonFields[i] = fmt.Sprintf(`'%s', OLD."%s"`, field, field)
-			}
-			rawFields = fmt.Sprintf(`JSON_BUILD_OBJECT(%s)::TEXT`, strings.Join(jsonFields, ","))
-		case "INSERT":
-			jsonFields := make([]string, len(l.Fields))
-			for i, field := range l.Fields {
-				jsonFields[i] = fmt.Sprintf(`'%s', NEW."%s"`, field, field)
-			}
-			rawFields = fmt.Sprintf(`JSON_BUILD_OBJECT(%s)::TEXT`, strings.Join(jsonFields, ","))
-		case "UPDATE":
-			jsonFields := make([]string, len(l.Fields))
-			for i, field := range l.Fields {
-				jsonFields[i] = fmt.Sprintf(`'%s', NEW."%s"`, field, field) //TODO DISTINCTION OLD NEW
-			}
-			rawFields = fmt.Sprintf(`JSON_BUILD_OBJECT(%s)::TEXT`, strings.Join(jsonFields, ","))
-
-			// Add condition to trigger only if fields where updated
+		} else {
 			rawConditions := make([]string, len(l.Fields))
 			for i, field := range l.Fields {
 				rawConditions[i] = fmt.Sprintf(`OLD."%s" <> NEW."%s"`, field, field)
 			}
 			rawConditionSql = strings.Join(rawConditions, " OR ")
+
+			jsonFields := make([]string, len(l.Fields))
+			for i, field := range l.Fields {
+				jsonFields[i] = fmt.Sprintf(`'%s', COALESCE(NEW."%s", OLD."%s")`, field, field, field)
+			}
+			rawFields = fmt.Sprintf(`JSON_BUILD_OBJECT(%s)::TEXT`, strings.Join(jsonFields, ","))
 		}
 
 		if rawConditionSql == "" {
@@ -91,7 +79,7 @@ func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.Listen
 
 	if operation != "TRUNCATE" {
 		statement += fmt.Sprintf(`
-			CREATE OR REPLACE TRIGGER "%s" AFTER %s ON %s FOR EACH ROW EXECUTE PROCEDURE "%s"."%s"();`,
+			CREATE OR REPLACE TRIGGER "%s" BEFORE %s ON %s FOR EACH ROW EXECUTE PROCEDURE "%s"."%s"();`,
 			triggerName, operation, d.sanitizeTableName(l.Table), d.Config.Schema, triggerFnName)
 	} else {
 		statement += fmt.Sprintf(`
@@ -180,7 +168,7 @@ func (d *Driver) sanitizeTableName(tableName string) string {
 	}
 	return strings.Join(segments, ".")
 }
-func (d *Driver) sqlExec(conn *sql.DB, query string) (sql.Result, error) {
+func (d *Driver) sqlExec(conn *pgx.Conn, query string) (pgconn.CommandTag, error) {
 	d._clientConfig.Logger.Trace().Str("query", query).Msg("sending sql request")
-	return conn.Exec(query)
+	return conn.Exec(context.TODO(), query)
 }

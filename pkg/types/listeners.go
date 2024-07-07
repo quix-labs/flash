@@ -1,8 +1,9 @@
 package types
 
 type ListenerConfig struct {
-	Table  string   // Can be prefixed by schema - e.g: public.posts
-	Fields []string // Empty fields means all ( SELECT * )
+	Table              string   // Can be prefixed by schema - e.g: public.posts
+	Fields             []string // Empty fields means all ( SELECT * )
+	MaxParallelProcess int      // Default to 1 (not parallel) -> use -1 for Infinity
 }
 
 type Event uint8

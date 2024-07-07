@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	postsListener := listeners.NewListener(&types.ListenerConfig{
+	postsListener, _ := listeners.NewListener(&types.ListenerConfig{
 		Table:  "public.posts",
 		Fields: []string{"id", "slug"},
 	})

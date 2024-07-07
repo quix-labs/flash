@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/quix-labs/flash/pkg/drivers/trigger"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 func NewClient(config *types.ClientConfig) (*Client, error) {
@@ -26,6 +28,9 @@ func NewClient(config *types.ClientConfig) (*Client, error) {
 		logger := zerolog.New(os.Stdout).Level(zerolog.DebugLevel).With().Stack().Timestamp().Logger()
 		config.Logger = &logger
 	}
+	if config.ShutdownTimeout == time.Duration(0) {
+		config.ShutdownTimeout = 10 * time.Second
+	}
 	return &Client{
 		Config:    config,
 		listeners: make(map[string]*listeners.Listener),
@@ -40,34 +45,6 @@ type Client struct {
 func (c *Client) Attach(l *listeners.Listener) {
 	listenerUid := c.getUniqueNameForListener(l)
 	c.listeners[listenerUid] = l
-}
-
-func (c *Client) Start() error {
-	err := c.Init()
-	if err != nil {
-		return err
-	}
-
-	eventChan := make(types.DatabaseEventsChan)
-	errChan := make(chan error)
-	go func() {
-		if err := c.Config.Driver.Listen(&eventChan); err != nil {
-			errChan <- err
-		}
-	}()
-
-	for {
-		select {
-		case receivedEvent := <-eventChan:
-			listener, exists := c.listeners[receivedEvent.ListenerUid]
-			if !exists {
-				return fmt.Errorf("listener %s not found", receivedEvent.ListenerUid) // I think simply can be ignored
-			}
-			listener.Dispatch(receivedEvent.ReceivedEvent)
-		case err := <-errChan:
-			return err
-		}
-	}
 }
 
 func (c *Client) Init() error {
@@ -106,34 +83,68 @@ func (c *Client) Init() error {
 	return nil
 }
 
-func (c *Client) Close() error {
-	var wg sync.WaitGroup
-
-	c.Config.Logger.Debug().Msg("Closing listeners")
-
-	// Remove listeners (parallel)
-	for _, l := range c.listeners {
-		wg.Add(1)
-		errChan := make(chan error)
-		listener := l // Keep copy to avoid invalid reference due to for loop
-		go func() {
-			defer wg.Done()
-			errChan <- listener.Close()
-		}()
-		err := <-errChan
-		if err != nil {
-			return err
-		}
-	}
-	wg.Wait()
-	c.Config.Logger.Debug().Msg("Listeners closed")
-
-	c.Config.Logger.Debug().Msg("Closing driver")
-	err := c.Config.Driver.Close()
+func (c *Client) Start() error {
+	err := c.Init()
 	if err != nil {
 		return err
 	}
-	c.Config.Logger.Debug().Msg("Driver closed")
+
+	eventChan := make(types.DatabaseEventsChan)
+	errChan := make(chan error)
+	go func() {
+		if err := c.Config.Driver.Listen(&eventChan); err != nil {
+			errChan <- err
+		}
+	}()
+
+	for {
+		select {
+		case receivedEvent := <-eventChan:
+			listener, exists := c.listeners[receivedEvent.ListenerUid]
+			if !exists {
+				return fmt.Errorf("listener %s not found", receivedEvent.ListenerUid) // I think simply can be ignored
+			}
+			listener.Dispatch(receivedEvent.ReceivedEvent)
+		case err := <-errChan:
+			return err
+		}
+	}
+}
+
+func (c *Client) Close() error {
+	errChan := make(chan error, 1)
+	go func() {
+		//TODO PARALLEL
+		c.Config.Logger.Debug().Msg("Closing listeners")
+		for _, l := range c.listeners {
+			if err := l.Close(); err != nil {
+				c.Config.Logger.Error().Err(err).Msg("Error closing listener")
+				errChan <- err
+				return
+			}
+		}
+		c.Config.Logger.Debug().Msg("Listeners closed")
+
+		c.Config.Logger.Debug().Msg("Closing driver")
+		errChan <- c.Config.Driver.Close()
+	}()
+
+	// Create timeout context for graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), c.Config.ShutdownTimeout)
+	defer cancel()
+
+	select {
+	case err := <-errChan:
+		if err != nil {
+			c.Config.Logger.Error().Err(err).Msg("Failed to close driver")
+			return err
+		}
+		c.Config.Logger.Debug().Msg("Driver closed")
+
+	case <-ctx.Done():
+		c.Config.Logger.Error().Msg("timeout reached while closing, some events can be loss")
+	}
+
 	return nil
 }
 

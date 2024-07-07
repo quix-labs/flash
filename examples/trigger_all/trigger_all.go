@@ -9,7 +9,7 @@ import (
 
 func main() {
 	postsListenerConfig := &types.ListenerConfig{Table: "public.posts"}
-	postsListener := listeners.NewListener(postsListenerConfig)
+	postsListener, _ := listeners.NewListener(postsListenerConfig)
 
 	// Registering your callbacks -> Can be simplified with types.EventAll
 	stop, err := postsListener.On(types.EventTruncate|types.EventInsert|types.EventUpdate|types.EventDelete, func(event *types.ReceivedEvent) {

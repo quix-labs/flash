@@ -8,31 +8,63 @@ import (
 	"github.com/rs/zerolog"
 	"os"
 	"os/signal"
+	"runtime/pprof"
+	"sync"
+	"time"
 )
 
 func main() {
-	postsListenerConfig := &types.ListenerConfig{
-		Table: "public.posts",
-		//Fields: []string{"id", "slug"},
+	f, err := os.Create("myprogram.prof")
+	if err != nil {
+		panic(err)
 	}
-	postsListener := listeners.NewListener(postsListenerConfig)
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
+
+	postsListenerConfig := &types.ListenerConfig{
+		Table:              "public.posts",
+		MaxParallelProcess: 1,
+		Fields:             []string{"id", "slug"},
+	}
+	postsListener, _ := listeners.NewListener(postsListenerConfig)
 
 	// Registering your callbacks
+	var i = 0
+	var mutex sync.Mutex
 	stop, err := postsListener.On(types.EventsAll, func(event *types.ReceivedEvent) {
-		fmt.Printf("Event received: %+v\n", event)
+		mutex.Lock()
+		i++
+		mutex.Unlock()
 	})
 	if err != nil {
-		fmt.Println(err)
+		panic(err)
 	}
-	defer stop()
+	defer func() {
+		err := stop()
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	go func() {
+		for {
+			time.Sleep(time.Second)
+			mutex.Lock()
+			fmt.Println(i)
+			i = 0
+			mutex.Unlock()
+		}
+
+	}()
 
 	// Create custom logger
 	logger := zerolog.New(os.Stdout).Level(zerolog.TraceLevel).With().Stack().Timestamp().Logger()
 
 	// Create client
 	clientConfig := &types.ClientConfig{
-		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
-		Logger:      &logger, // Define your custom zerolog.Logger here
+		DatabaseCnx:     "postgresql://devuser:devpass@localhost:5432/devdb",
+		Logger:          &logger, // Define your custom zerolog.Logger here
+		ShutdownTimeout: time.Second * 2,
 	}
 	flashClient, _ := client.NewClient(clientConfig)
 	flashClient.Attach(postsListener)
@@ -44,7 +76,13 @@ func main() {
 			panic(err)
 		}
 	}() // Error Handling
-	defer flashClient.Close()
+
+	defer func() {
+		err := flashClient.Close()
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	// Wait for interrupt signal (Ctrl+C)
 	interrupt := make(chan os.Signal, 1)
