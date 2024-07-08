@@ -5,6 +5,7 @@ import (
 	"github.com/jackc/pglogrepl"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/quix-labs/flash/pkg/types"
+	"reflect"
 )
 
 func (d *Driver) processXld(xld *pglogrepl.XLogData) (bool, error) {
@@ -58,11 +59,11 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 		if err != nil {
 			return false, err
 		}
-		for listenerUid, _ := range listeners {
-			//TODO EXTRACT ONLY SPECIFIED FIELDS
+		for listenerUid, listenerConfig := range listeners {
+			reducedNewData := d.ExtractFields(newData, listenerConfig.Fields)
 			*d.eventsChan <- &types.DatabaseEvent{
 				ListenerUid: listenerUid,
-				Event:       &types.InsertEvent{New: newData},
+				Event:       &types.InsertEvent{New: reducedNewData},
 			}
 		}
 
@@ -93,14 +94,18 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 		if err != nil {
 			return false, err
 		}
-		for listenerUid, _ := range listeners {
-			//TODO EXTRACT ONLY SPECIFIED FIELDS
-			//TODO ONLY IF EVENT IS LISTENED, ACTUALLY ALWAYS SEND
-			// TODO ONLY IF FIELDS CHANGED - POSTGRES >15 ALLOW WHERE ON PUBLICATION
+		for listenerUid, listenerConfig := range listeners {
+			// TODO SOFTDELETE  POSTGRES >15 ALLOW WHERE ON PUBLICATION
 			// @link https://www.postgresql.org/docs/current/sql-alterpublication.html
+
+			reducedOldData := d.ExtractFields(oldData, listenerConfig.Fields)
+			reducedNewData := d.ExtractFields(newData, listenerConfig.Fields)
+			if d.CheckEquals(reducedNewData, reducedOldData) {
+				continue //Ignore event if update is not in listener fields
+			}
 			*d.eventsChan <- &types.DatabaseEvent{
 				ListenerUid: listenerUid,
-				Event:       &types.UpdateEvent{Old: oldData, New: newData},
+				Event:       &types.UpdateEvent{Old: reducedOldData, New: reducedNewData},
 			}
 		}
 
@@ -125,11 +130,11 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 		if err != nil {
 			return false, err
 		}
-		for listenerUid, _ := range listeners {
-			//TODO EXTRACT ONLY SPECIFIED FIELDS
+		for listenerUid, listenerConfig := range listeners {
+			reducedOldData := d.ExtractFields(oldData, listenerConfig.Fields)
 			*d.eventsChan <- &types.DatabaseEvent{
 				ListenerUid: listenerUid,
-				Event:       &types.DeleteEvent{Old: oldData},
+				Event:       &types.DeleteEvent{Old: reducedOldData},
 			}
 		}
 
@@ -232,6 +237,17 @@ func (d *Driver) parseTuple(relationID uint32, tuple *pglogrepl.TupleData) (*typ
 		}
 	}
 	return &values, nil
+}
+
+func (d *Driver) ExtractFields(data *types.EventData, fields []string) *types.EventData {
+	reducedData := types.EventData{}
+	for _, field := range fields {
+		reducedData[field] = (*data)[field]
+	}
+	return &reducedData
+}
+func (d *Driver) CheckEquals(source any, target any) bool {
+	return reflect.DeepEqual(source, target)
 }
 
 func (d *Driver) getRelationTableName(relationID uint32) (string, error) {
