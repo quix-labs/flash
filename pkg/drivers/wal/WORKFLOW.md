@@ -34,16 +34,6 @@ sequenceDiagram
         end
     end
     rect rgba(45,212,191,0.5)
-        note over Your App, External: Handle KeepAlive
-        loop Handle KeepAlive
-            par
-                Database -->> Driver: claim keepalive
-            and x seconds since last send
-                Driver -->> Driver: Wait x seconds
-            end
-
-            Driver ->> Database: send keepalive
-        end
         par
             note over Your App, External: Change listeners during runtime
             loop
@@ -52,7 +42,45 @@ sequenceDiagram
                 Client ->> Driver: send listen for delete signal
                 Driver ->> Database: ALTER PUBLICATION ...
             end
-            note over Your App, External: Listened external operation
+        and
+            note over Your App, External: Handle KeepAlive
+            loop Handle KeepAlive
+                par
+                    Database -->> Driver: claim keepalive
+                and x seconds since last send
+                    Driver -->> Driver: Wait x seconds
+                end
+
+                Driver ->> Database: send keepalive
+            end
+        and
+            note over Your App, External: Handle Streamed TX
+            Database -->> Driver: send stream start
+            loop
+                Database -->> Driver: send XLogData
+                Driver ->> Driver: Parse data and stack in queue
+            end
+            Driver ->> Driver: Wait for stream commit/rollback
+        and
+            note over Your App, External: Handle stream rollback
+            Database -->> Driver: send stream rollback
+            Driver ->> Driver: remove queue
+            Driver ->> Database: FLUSH POSITION
+        and
+            note over Your App, External: Handle stream Commit
+            Database -->> Driver: send stream commit
+            activate Driver
+            loop For each queued event
+                loop For each concerned listeners
+                    Driver -->> Client: Send event
+                    Client -->> Listener: Notify listener
+                    Listener -->> Your App: Event processed
+                end
+            end
+            Driver ->> Database: FLUSH POSITION
+            deactivate Driver
+        and
+            note over Your App, External: Handle XLogData
             loop
                 External -->> Database: DELETE FROM ...
                 Database --) Driver: Write WAL
@@ -64,13 +92,6 @@ sequenceDiagram
                 end
                 Driver ->> Database: FLUSH POSITION
                 deactivate Driver
-            end
-            note over Your App, External: Un-listened external operation
-            loop
-                External -->> Database: UPDATE FROM ...
-                Database --) Driver: Write WAL
-                Driver-->>Driver: Ignore if not listened
-                Driver ->> Database: FLUSH POSITION
             end
         end
     end
