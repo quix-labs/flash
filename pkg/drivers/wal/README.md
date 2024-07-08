@@ -15,3 +15,8 @@ In all cases, we will receive all events, listened to or not.
     - Detect the event (INSERT, UPDATE, DELETE, TRUNCATE, ...)
         - If it does not exist internally in our list of events to track -> ignore
         - Otherwise -> forward to the callback
+
+### WORKFLOW
+
+You can find a workflow graph [here](./WORKFLOW.md).
+

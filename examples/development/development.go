@@ -32,7 +32,7 @@ func main() {
 	var i = 0
 	var mutex sync.Mutex
 
-	stopAll, err := postsListener.On(types.OperationTruncate, func(event types.Event) {
+	stopAll, err := postsListener.On(types.OperationAll, func(event types.Event) {
 		mutex.Lock()
 		i++
 		mutex.Unlock()

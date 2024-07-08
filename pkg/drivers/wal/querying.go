@@ -92,7 +92,6 @@ func (d *Driver) startQuerying() error {
 				delete(d.activePublications, currentSub.slotName)
 				delete(d.subscriptionState.currentSubscriptions, claimSub.listenerUid)
 			}
-			d.replicationState.restartChan <- struct{}{} // Send restart signal
 
 		case claimSub := <-d.subscriptionState.subChan:
 			currentSub, exists := d.subscriptionState.currentSubscriptions[claimSub.listenerUid]
@@ -114,6 +113,8 @@ func (d *Driver) startQuerying() error {
 
 				d.subscriptionState.currentSubscriptions[claimSub.listenerUid] = currentSub
 				d.activePublications[slotName] = true
+				d.replicationState.restartChan <- struct{}{} // Send restart signal
+
 			} else {
 				prevEvents := *currentSub.events
 				*currentSub.events |= *claimSub.event //Append event to listened
@@ -131,8 +132,6 @@ func (d *Driver) startQuerying() error {
 					return err
 				}
 			}
-
-			d.replicationState.restartChan <- struct{}{} // Send restart signal
 		}
 	}
 }
