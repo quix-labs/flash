@@ -141,7 +141,7 @@ The following features are planned for future implementation:
 - ⬜ Remove client in favor of direct listener start
 - ⬜ Support attaching/detaching new listener during runtime.
 - ⬜ Tests implementation
-- ... any feedback is welcome.
+- ... any suggestions is welcome.
 
 ## Drivers
 
