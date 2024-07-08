@@ -12,8 +12,9 @@ func main() {
 	postsListener, _ := listeners.NewListener(postsListenerConfig)
 
 	// Registering your callbacks
-	stop, err := postsListener.On(types.EventInsert, func(event *types.ReceivedEvent) {
-		fmt.Printf("Event received: %+v\n", event)
+	stop, err := postsListener.On(types.OperationInsert, func(event types.Event) {
+		typedEvent := event.(*types.InsertEvent)
+		fmt.Printf("insert - new: %+v\n", typedEvent.New)
 	})
 	if err != nil {
 		fmt.Println(err)

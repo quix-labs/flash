@@ -21,20 +21,20 @@ func NewListener(config *types.ListenerConfig) (*Listener, error) {
 
 	return &Listener{
 		Config:    config,
-		callbacks: make(map[*types.EventCallback]types.Event),
+		callbacks: make(map[*types.EventCallback]types.Operation),
 		semaphore: semaphore,
 	}, nil
 }
 
-type CreateEventCallback func(event types.Event) error
-type DeleteEventCallback func(event types.Event) error
+type CreateEventCallback func(event types.Operation) error
+type DeleteEventCallback func(event types.Operation) error
 type Listener struct {
 	Config *types.ListenerConfig
 
 	// Internals
 	sync.Mutex
-	callbacks      map[*types.EventCallback]types.Event
-	listenedEvents types.Event // Use bitwise comparison to check for listened events
+	callbacks      map[*types.EventCallback]types.Operation
+	listenedEvents types.Operation // Use bitwise comparison to check for listened events
 	semaphore      chan struct{}
 
 	// Trigger client
@@ -45,7 +45,7 @@ type Listener struct {
 
 /* Callback management */
 
-func (l *Listener) On(event types.Event, callback types.EventCallback) (func() error, error) {
+func (l *Listener) On(event types.Operation, callback types.EventCallback) (func() error, error) {
 	if callback == nil {
 		return nil, errors.New("callback cannot be nil")
 	}
@@ -68,38 +68,29 @@ func (l *Listener) On(event types.Event, callback types.EventCallback) (func() e
 	return removeFunc, nil
 }
 
-func (l *Listener) Dispatch(event *types.ReceivedEvent) {
-	for mask := types.Event(1); mask != 0 && mask <= types.EventsAll; mask <<= 1 {
-		if event.Event&mask == 0 {
-			continue
-		}
-
-		if l.listenedEvents&mask == 0 {
-			continue
-		}
-
-		for callback, listens := range l.callbacks {
-			if listens&mask > 0 {
-				if l.Config.MaxParallelProcess == -1 {
-					go (*callback)(event)
-					continue
-				}
-
-				// Acquire semaphore
-				l.semaphore <- struct{}{}
-				if l.Config.MaxParallelProcess == 1 {
-					(*callback)(event)
-					<-l.semaphore
-					continue
-				}
-
-				go func() {
-					(*callback)(event)
-					<-l.semaphore
-				}()
+func (l *Listener) Dispatch(event *types.Event) {
+	for callback, listens := range l.callbacks {
+		if listens&(*event).GetOperation() > 0 {
+			if l.Config.MaxParallelProcess == -1 {
+				go (*callback)(*event)
+				continue
 			}
+
+			// Acquire semaphore
+			l.semaphore <- struct{}{}
+			if l.Config.MaxParallelProcess == 1 {
+				(*callback)(*event)
+				<-l.semaphore
+				continue
+			}
+
+			go func() {
+				(*callback)(*event)
+				<-l.semaphore
+			}()
 		}
 	}
+
 }
 
 // Init emit all event for first boot */
@@ -111,7 +102,7 @@ func (l *Listener) Init(_createCallback CreateEventCallback, _deleteCallback Del
 	l._clientDeleteEventCallback = _deleteCallback
 
 	// Emit all events for initialization
-	for targetEvent := types.Event(1); targetEvent != 0 && targetEvent <= types.EventsAll; targetEvent <<= 1 {
+	for targetEvent := types.Operation(1); targetEvent != 0 && targetEvent <= types.OperationAll; targetEvent <<= 1 {
 		if l.listenedEvents&targetEvent == 0 {
 			continue
 		}
@@ -124,7 +115,7 @@ func (l *Listener) Init(_createCallback CreateEventCallback, _deleteCallback Del
 	return nil
 }
 
-func (l *Listener) addListenedEventIfNeeded(event types.Event) error {
+func (l *Listener) addListenedEventIfNeeded(event types.Operation) error {
 
 	initialEvents := l.listenedEvents
 	l.listenedEvents |= event
@@ -135,7 +126,7 @@ func (l *Listener) addListenedEventIfNeeded(event types.Event) error {
 		return nil
 	}
 
-	for targetEvent := types.Event(1); targetEvent != 0 && targetEvent <= types.EventsAll; targetEvent <<= 1 {
+	for targetEvent := types.Operation(1); targetEvent != 0 && targetEvent <= types.OperationAll; targetEvent <<= 1 {
 		if targetEvent&diff == 0 || targetEvent&event == 0 {
 			continue
 		}
@@ -151,9 +142,9 @@ func (l *Listener) addListenedEventIfNeeded(event types.Event) error {
 	return nil
 }
 
-func (l *Listener) removeListenedEventIfNeeded(event types.Event) error {
+func (l *Listener) removeListenedEventIfNeeded(event types.Operation) error {
 
-	for targetEvent := types.Event(1); targetEvent != 0 && targetEvent <= event; targetEvent <<= 1 {
+	for targetEvent := types.Operation(1); targetEvent != 0 && targetEvent <= event; targetEvent <<= 1 {
 		if targetEvent&l.listenedEvents == 0 {
 			continue
 		}
@@ -179,7 +170,7 @@ func (l *Listener) Close() error {
 	l._clientInitialized = false
 	return nil
 }
-func (l *Listener) hasListenersForEvent(event types.Event) bool {
+func (l *Listener) hasListenersForEvent(event types.Operation) bool {
 	for _, listens := range l.callbacks {
 		if listens&event > 0 {
 			return true

@@ -14,7 +14,7 @@ type ClientConfig struct {
 }
 
 type DatabaseEvent struct {
-	ListenerUid   string
-	ReceivedEvent *ReceivedEvent
+	ListenerUid string
+	Event       Event
 }
 type DatabaseEventsChan chan *DatabaseEvent

@@ -13,12 +13,15 @@ func (d *Driver) getFullSlotName(slotName string) string {
 	return d.Config.PublicationSlotPrefix + "-" + slotName
 }
 
-func (d *Driver) getCreatePublicationSlotSql(fullSlotName string, config *types.ListenerConfig, event *types.Event) (string, error) {
-	rawSql := fmt.Sprintf(`CREATE PUBLICATION "%s"`, fullSlotName)
-	if config != nil {
-		rawSql += fmt.Sprintf(` FOR TABLE %s`, d.sanitizeTableName(config.Table, true))
-		//TODO ADD ALTER TABLE x REPLICA IDENTITY FULL
+func (d *Driver) getCreatePublicationSlotSql(fullSlotName string, config *types.ListenerConfig, event *types.Operation) (string, error) {
+	if config == nil {
+		return fmt.Sprintf(`CREATE PUBLICATION "%s";`, fullSlotName), nil
 	}
+
+	// SET REPLICA IDENTITY TO FULL ON CREATION
+	quotedTableName := d.sanitizeTableName(config.Table, true)
+	rawSql := fmt.Sprintf(`ALTER TABLE %s REPLICA IDENTITY FULL;CREATE PUBLICATION "%s" FOR TABLE %s`, quotedTableName, fullSlotName, quotedTableName)
+
 	if event != nil {
 		operationName, err := d.getOperationNameForEvent(event)
 		if err != nil {
@@ -29,19 +32,39 @@ func (d *Driver) getCreatePublicationSlotSql(fullSlotName string, config *types.
 	return rawSql + ";", nil
 }
 
+func (d *Driver) getAlterPublicationEventsSql(publication *activePublication) (string, error) {
+	if publication == nil {
+		return "", errors.New("publication is nil")
+	}
+
+	var events []string
+	for targetEvent := types.Operation(1); targetEvent != 0 && targetEvent <= types.OperationAll; targetEvent <<= 1 {
+		if (*publication.events)&targetEvent == 0 {
+			continue
+		}
+		operation, err := d.getOperationNameForEvent(&targetEvent)
+		if err != nil {
+			return "", err
+		}
+		events = append(events, operation)
+	}
+
+	return fmt.Sprintf(`ALTER PUBLICATION "%s" SET (publish = '%s');`, publication.slotName, strings.Join(events, ", ")), nil
+}
+
 func (d *Driver) getDropPublicationSlotSql(fullSlotName string) string {
 	return fmt.Sprintf(`DROP PUBLICATION IF EXISTS "%s";`, fullSlotName)
 }
-func (d *Driver) getOperationNameForEvent(e *types.Event) (string, error) {
+func (d *Driver) getOperationNameForEvent(e *types.Operation) (string, error) {
 	operation := ""
 	switch *e {
-	case types.EventInsert:
+	case types.OperationInsert:
 		operation = "insert"
-	case types.EventUpdate:
+	case types.OperationUpdate:
 		operation = "update"
-	case types.EventDelete:
+	case types.OperationDelete:
 		operation = "delete"
-	case types.EventTruncate:
+	case types.OperationTruncate:
 		operation = "truncate"
 	default:
 		return "", errors.New("could not determine event type")

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.ListenerConfig, e *types.Event) (string, string, error) {
+func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.ListenerConfig, e *types.Operation) (string, string, error) {
 	uniqueName, err := d.getUniqueIdentifierForListenerEvent(listenerUid, e)
 	if err != nil {
 		return "", "", err
@@ -28,7 +28,7 @@ func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.Listen
 		statement = fmt.Sprintf(`
 			CREATE OR REPLACE FUNCTION "%s"."%s"() RETURNS trigger AS $trigger$
 			BEGIN 
-				PERFORM pg_notify('%s', ROW_TO_JSON(COALESCE(NEW, OLD))::TEXT);
+				PERFORM pg_notify('%s', JSONB_BUILD_OBJECT('old',to_jsonb(OLD),'new',to_jsonb(NEW))::TEXT);
 				RETURN COALESCE(NEW, OLD);
 			END;
 			$trigger$ LANGUAGE plpgsql VOLATILE;`,
@@ -44,24 +44,28 @@ func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.Listen
 			for i, field := range l.Fields {
 				jsonFields[i] = fmt.Sprintf(`'%s', OLD."%s"`, field, field)
 			}
-			rawFields = fmt.Sprintf(`JSON_BUILD_OBJECT(%s)::TEXT`, strings.Join(jsonFields, ","))
+			rawFields = fmt.Sprintf(`JSONB_BUILD_OBJECT('old',JSONB_BUILD_OBJECT(%s))::TEXT`, strings.Join(jsonFields, ","))
 		case "INSERT":
 			jsonFields := make([]string, len(l.Fields))
 			for i, field := range l.Fields {
 				jsonFields[i] = fmt.Sprintf(`'%s', NEW."%s"`, field, field)
 			}
-			rawFields = fmt.Sprintf(`JSON_BUILD_OBJECT(%s)::TEXT`, strings.Join(jsonFields, ","))
+			rawFields = fmt.Sprintf(`JSONB_BUILD_OBJECT('new',JSONB_BUILD_OBJECT(%s))::TEXT`, strings.Join(jsonFields, ","))
 		case "UPDATE":
-			jsonFields := make([]string, len(l.Fields))
+			oldJsonFields := make([]string, len(l.Fields))
 			for i, field := range l.Fields {
-				jsonFields[i] = fmt.Sprintf(`'%s', NEW."%s"`, field, field) //TODO DISTINCTION OLD NEW
+				oldJsonFields[i] = fmt.Sprintf(`'%s', OLD."%s"`, field, field) //TODO DISTINCTION OLD NEW
 			}
-			rawFields = fmt.Sprintf(`JSON_BUILD_OBJECT(%s)::TEXT`, strings.Join(jsonFields, ","))
+			newJsonFields := make([]string, len(l.Fields))
+			for i, field := range l.Fields {
+				newJsonFields[i] = fmt.Sprintf(`'%s', NEW."%s"`, field, field) //TODO DISTINCTION OLD NEW
+			}
+			rawFields = fmt.Sprintf(`JSONB_BUILD_OBJECT('old',JSONB_BUILD_OBJECT(%s),'new',JSONB_BUILD_OBJECT(%s))::TEXT`, strings.Join(oldJsonFields, ","), strings.Join(newJsonFields, ","))
 
 			// Add condition to trigger only if fields where updated
 			rawConditions := make([]string, len(l.Fields))
 			for i, field := range l.Fields {
-				rawConditions[i] = fmt.Sprintf(`OLD."%s" <> NEW."%s"`, field, field)
+				rawConditions[i] = fmt.Sprintf(`(OLD."%s" IS DISTINCT FROM NEW."%s")`, field, field)
 			}
 			rawConditionSql = strings.Join(rawConditions, " OR ")
 		}
@@ -102,7 +106,7 @@ func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.Listen
 	return statement, eventName, nil
 }
 
-func (d *Driver) getDeleteTriggerSqlForEvent(listenerUid string, l *types.ListenerConfig, e *types.Event) (string, string, error) {
+func (d *Driver) getDeleteTriggerSqlForEvent(listenerUid string, l *types.ListenerConfig, e *types.Operation) (string, string, error) {
 	uniqueName, err := d.getUniqueIdentifierForListenerEvent(listenerUid, e)
 	if err != nil {
 		return "", "", err
@@ -114,40 +118,40 @@ func (d *Driver) getDeleteTriggerSqlForEvent(listenerUid string, l *types.Listen
 	return fmt.Sprintf(`DROP FUNCTION IF EXISTS "%s"."%s" CASCADE;`, d.Config.Schema, triggerFnName), eventName, nil
 }
 
-func (d *Driver) getOperationNameForEvent(e *types.Event) (string, error) {
+func (d *Driver) getOperationNameForEvent(e *types.Operation) (string, error) {
 	operation := ""
 	switch *e {
-	case types.EventInsert:
+	case types.OperationInsert:
 		operation = "INSERT"
-	case types.EventUpdate:
+	case types.OperationUpdate:
 		operation = "UPDATE"
-	case types.EventDelete:
+	case types.OperationDelete:
 		operation = "DELETE"
-	case types.EventTruncate:
+	case types.OperationTruncate:
 		operation = "TRUNCATE"
 	default:
 		return "", errors.New("could not determine event type")
 	}
 	return operation, nil
 }
-func (d *Driver) getEventForOperationName(operationName string) (types.Event, error) {
-	var event types.Event
+func (d *Driver) getOperationFromName(operationName string) (types.Operation, error) {
+	var event types.Operation
 
 	switch strings.ToUpper(operationName) {
 	case "INSERT":
-		event = types.EventInsert
+		event = types.OperationInsert
 	case "UPDATE":
-		event = types.EventUpdate
+		event = types.OperationUpdate
 	case "DELETE":
-		event = types.EventDelete
+		event = types.OperationDelete
 	case "TRUNCATE":
-		event = types.EventTruncate
+		event = types.OperationTruncate
 	default:
 		return 0, errors.New("could not determine event type")
 	}
 	return event, nil
 }
-func (d *Driver) getUniqueIdentifierForListenerEvent(listenerUid string, e *types.Event) (string, error) {
+func (d *Driver) getUniqueIdentifierForListenerEvent(listenerUid string, e *types.Operation) (string, error) {
 	operationName, err := d.getOperationNameForEvent(e)
 	if err != nil {
 		return "", err
@@ -158,19 +162,19 @@ func (d *Driver) getUniqueIdentifierForListenerEvent(listenerUid string, e *type
 		strings.ToLower(operationName),
 	}, "_"), nil
 }
-func (d *Driver) parseEventName(channel string) (string, types.Event, error) {
+func (d *Driver) parseEventName(channel string) (string, types.Operation, error) {
 	parts := strings.Split(channel, "_")
 	if len(parts) != 4 {
 		return "", 0, errors.New("could not determine unique identifier")
 	}
 
 	listenerUid := parts[1]
-	event, err := d.getEventForOperationName(parts[2])
+	operation, err := d.getOperationFromName(parts[2])
 	if err != nil {
 		return "", 0, err
 	}
 
-	return listenerUid, event, nil
+	return listenerUid, operation, nil
 
 }
 func (d *Driver) sanitizeTableName(tableName string) string {

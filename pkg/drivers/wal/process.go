@@ -53,18 +53,16 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 		if !exists {
 			break
 		}
-		data, err := d.parseTuple(logicalMsg.RelationID, logicalMsg.Tuple)
+
+		newData, err := d.parseTuple(logicalMsg.RelationID, logicalMsg.Tuple)
 		if err != nil {
 			return false, err
 		}
-
 		for listenerUid, _ := range listeners {
+			//TODO EXTRACT ONLY SPECIFIED FIELDS
 			*d.eventsChan <- &types.DatabaseEvent{
 				ListenerUid: listenerUid,
-				ReceivedEvent: &types.ReceivedEvent{
-					Event: types.EventInsert,
-					Data:  data,
-				},
+				Event:       &types.InsertEvent{New: newData},
 			}
 		}
 
@@ -86,21 +84,23 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			break
 		}
 
-		data, err := d.parseTuple(logicalMsg.RelationID, logicalMsg.NewTuple)
+		newData, err := d.parseTuple(logicalMsg.RelationID, logicalMsg.NewTuple)
 		if err != nil {
 			return false, err
 		}
 
+		oldData, err := d.parseTuple(logicalMsg.RelationID, logicalMsg.OldTuple)
+		if err != nil {
+			return false, err
+		}
 		for listenerUid, _ := range listeners {
+			//TODO EXTRACT ONLY SPECIFIED FIELDS
 			//TODO ONLY IF EVENT IS LISTENED, ACTUALLY ALWAYS SEND
 			// TODO ONLY IF FIELDS CHANGED - POSTGRES >15 ALLOW WHERE ON PUBLICATION
 			// @link https://www.postgresql.org/docs/current/sql-alterpublication.html
 			*d.eventsChan <- &types.DatabaseEvent{
 				ListenerUid: listenerUid,
-				ReceivedEvent: &types.ReceivedEvent{
-					Event: types.EventUpdate,
-					Data:  data,
-				},
+				Event:       &types.UpdateEvent{Old: oldData, New: newData},
 			}
 		}
 
@@ -121,17 +121,15 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 		if !exists {
 			break
 		}
-		data, err := d.parseTuple(logicalMsg.RelationID, logicalMsg.OldTuple)
+		oldData, err := d.parseTuple(logicalMsg.RelationID, logicalMsg.OldTuple)
 		if err != nil {
 			return false, err
 		}
 		for listenerUid, _ := range listeners {
+			//TODO EXTRACT ONLY SPECIFIED FIELDS
 			*d.eventsChan <- &types.DatabaseEvent{
 				ListenerUid: listenerUid,
-				ReceivedEvent: &types.ReceivedEvent{
-					Event: types.EventDelete,
-					Data:  data, //TODO OLD AND NEW OR PKEY
-				},
+				Event:       &types.DeleteEvent{Old: oldData},
 			}
 		}
 
@@ -156,10 +154,7 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			for listenerUid, _ := range listeners {
 				*d.eventsChan <- &types.DatabaseEvent{
 					ListenerUid: listenerUid,
-					ReceivedEvent: &types.ReceivedEvent{
-						Event: types.EventTruncate,
-						Data:  nil,
-					},
+					Event:       &types.TruncateEvent{},
 				}
 			}
 		}

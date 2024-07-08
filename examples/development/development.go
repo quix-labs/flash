@@ -31,22 +31,51 @@ func main() {
 	// Registering your callbacks
 	var i = 0
 	var mutex sync.Mutex
-	stop, err := postsListener.On(types.EventsAll, func(event *types.ReceivedEvent) {
+
+	stopAll, err := postsListener.On(types.OperationTruncate, func(event types.Event) {
 		mutex.Lock()
 		i++
 		mutex.Unlock()
-		//fmt.Printf("%d - %+v\n", event.Event, event.Data)
+
+		switch typedEvent := event.(type) {
+		case *types.InsertEvent:
+			fmt.Printf("insert - new: %+v\n", typedEvent.New)
+		case *types.UpdateEvent:
+			fmt.Printf("update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
+		case *types.DeleteEvent:
+			fmt.Printf("delete - old: %+v \n", typedEvent.Old)
+		case *types.TruncateEvent:
+			fmt.Printf("truncate \n")
+		}
 	})
 	if err != nil {
 		panic(err)
 	}
+
 	defer func() {
-		err := stop()
+		err := stopAll()
 		if err != nil {
 			panic(err)
 		}
 	}()
 
+	stopTruncate, err := postsListener.On(types.OperationTruncate, func(event types.Event) {
+		mutex.Lock()
+		i++
+		mutex.Unlock()
+		typedEvent := event.(*types.TruncateEvent)
+		fmt.Println(typedEvent.GetOperation())
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	defer func() {
+		err := stopTruncate()
+		if err != nil {
+			panic(err)
+		}
+	}()
 	go func() {
 		for {
 			time.Sleep(time.Second * 1)
@@ -58,9 +87,11 @@ func main() {
 	}()
 
 	// Create custom logger
-	logger := zerolog.New(os.Stdout).Level(zerolog.DebugLevel).With().Caller().Stack().Timestamp().Logger()
+	logger := zerolog.New(os.Stdout).Level(zerolog.TraceLevel).With().Caller().Stack().Timestamp().Logger()
 
-	driver := wal.NewDriver(&wal.DriverConfig{UseStreaming: true})
+	driver := wal.NewDriver(&wal.DriverConfig{
+		//UseStreaming: true,
+	})
 
 	// Create client
 	clientConfig := &types.ClientConfig{

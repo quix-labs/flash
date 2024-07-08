@@ -6,16 +6,33 @@ import (
 	"github.com/quix-labs/flash/pkg/types"
 )
 
-type subscription struct {
+type subscriptionClaim struct {
 	listenerUid    string
 	listenerConfig *types.ListenerConfig
-	event          *types.Event
+	event          *types.Operation
+}
+
+type activePublication struct {
+	listenerConfig *types.ListenerConfig
+	slotName       string
+	events         *types.Operation // Use with bitwise to handle combined events
+}
+
+// Key -> listenerUid
+type subscriptionState struct {
+	subChan              chan *subscriptionClaim
+	unsubChan            chan *subscriptionClaim
+	currentSubscriptions map[string]*activePublication
 }
 
 func (d *Driver) initQuerying() error {
-	// Bootstrap/Start listening
-	d.subChan = make(chan *subscription, 1)
-	d.unsubChan = make(chan *subscription, 1)
+	d.subscriptionState = &subscriptionState{
+		subChan:              make(chan *subscriptionClaim),
+		unsubChan:            make(chan *subscriptionClaim),
+		currentSubscriptions: make(map[string]*activePublication),
+	}
+
+	// Bootstrap/Start listening TODO USELESS
 	d.activePublications = make(map[string]bool)
 
 	return nil
@@ -46,35 +63,75 @@ func (d *Driver) startQuerying() error {
 	for {
 		select {
 
-		case sub := <-d.unsubChan:
-			operationName, err := d.getOperationNameForEvent(sub.event)
-			if err != nil {
-				return err
+		case claimSub := <-d.subscriptionState.unsubChan:
+			currentSub, exists := d.subscriptionState.currentSubscriptions[claimSub.listenerUid]
+			if !exists {
+				continue
 			}
 
-			slotName := d.getFullSlotName(sub.listenerUid + "-" + operationName)
-			if _, err := d.sqlExec(d.queryConn, d.getDropPublicationSlotSql(slotName)); err != nil {
-				return err
+			prevEvents := *currentSub.events
+			*currentSub.events &= ^(*claimSub.event) // Remove event from listened
+
+			// Bypass if no changes
+			if *currentSub.events == prevEvents {
+				return nil
 			}
-			delete(d.activePublications, slotName)
+
+			if *currentSub.events > 0 {
+				alterSql, err := d.getAlterPublicationEventsSql(currentSub)
+				if err != nil {
+					return err
+				}
+				if _, err := d.sqlExec(d.queryConn, alterSql); err != nil {
+					return err
+				}
+			} else {
+				if _, err := d.sqlExec(d.queryConn, d.getDropPublicationSlotSql(currentSub.slotName)); err != nil {
+					return err
+				}
+				delete(d.activePublications, currentSub.slotName)
+				delete(d.subscriptionState.currentSubscriptions, claimSub.listenerUid)
+			}
 			d.replicationState.restartChan <- struct{}{} // Send restart signal
 
-		case sub := <-d.subChan:
-			//TODO USE SAME PUBLICATION USING ALTER
-			operationName, err := d.getOperationNameForEvent(sub.event)
-			if err != nil {
-				return err
+		case claimSub := <-d.subscriptionState.subChan:
+			currentSub, exists := d.subscriptionState.currentSubscriptions[claimSub.listenerUid]
+			if !exists {
+				currentSub = &activePublication{
+					listenerConfig: claimSub.listenerConfig,
+					slotName:       d.getFullSlotName(claimSub.listenerUid),
+					events:         claimSub.event,
+				}
+
+				slotName := d.getFullSlotName(claimSub.listenerUid)
+				rawSql, err := d.getCreatePublicationSlotSql(slotName, claimSub.listenerConfig, claimSub.event)
+				if err != nil {
+					return err
+				}
+				if _, err := d.sqlExec(d.queryConn, rawSql); err != nil {
+					return err
+				}
+
+				d.subscriptionState.currentSubscriptions[claimSub.listenerUid] = currentSub
+				d.activePublications[slotName] = true
+			} else {
+				prevEvents := *currentSub.events
+				*currentSub.events |= *claimSub.event //Append event to listened
+
+				// Bypass if no changes
+				if prevEvents == *currentSub.events {
+					return nil
+				}
+
+				alterSql, err := d.getAlterPublicationEventsSql(currentSub)
+				if err != nil {
+					return err
+				}
+				if _, err := d.sqlExec(d.queryConn, alterSql); err != nil {
+					return err
+				}
 			}
 
-			slotName := d.getFullSlotName(sub.listenerUid + "-" + operationName)
-			rawSql, err := d.getCreatePublicationSlotSql(slotName, sub.listenerConfig, sub.event)
-			if err != nil {
-				return err
-			}
-			if _, err := d.sqlExec(d.queryConn, rawSql); err != nil {
-				return err
-			}
-			d.activePublications[slotName] = true
 			d.replicationState.restartChan <- struct{}{} // Send restart signal
 		}
 	}

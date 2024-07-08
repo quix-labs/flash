@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"github.com/lib/pq"
 	"github.com/quix-labs/flash/pkg/types"
@@ -43,7 +44,7 @@ type Driver struct {
 	_clientConfig *types.ClientConfig
 }
 
-func (d *Driver) HandleEventListenStart(listenerUid string, lc *types.ListenerConfig, event *types.Event) error {
+func (d *Driver) HandleEventListenStart(listenerUid string, lc *types.ListenerConfig, event *types.Operation) error {
 	createTriggerSql, eventName, err := d.getCreateTriggerSqlForEvent(listenerUid, lc, event)
 	if err != nil {
 		return err
@@ -56,7 +57,7 @@ func (d *Driver) HandleEventListenStart(listenerUid string, lc *types.ListenerCo
 	return d.addEventToListened(eventName)
 }
 
-func (d *Driver) HandleEventListenStop(listenerUid string, lc *types.ListenerConfig, event *types.Event) error {
+func (d *Driver) HandleEventListenStop(listenerUid string, lc *types.ListenerConfig, event *types.Operation) error {
 	createTriggerSql, eventName, err := d.getDeleteTriggerSqlForEvent(listenerUid, lc, event)
 	if err != nil {
 		return err
@@ -120,7 +121,6 @@ func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
 			if err := d.pgListener.Unlisten(eventName); err != nil {
 				return err
 			}
-			fmt.Println("UNLISTENED")
 			continue
 
 		case eventName := <-d.subChan:
@@ -131,26 +131,53 @@ func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
 			continue
 
 		case notification := <-d.pgListener.Notify:
-			listenerUid, event, err := d.parseEventName(notification.Channel)
+			listenerUid, operation, err := d.parseEventName(notification.Channel)
 			if err != nil {
 				errChan <- err
 				continue
 			}
-			var data types.EventData
-			//if notification.Extra != "" {
-			//	data = make(types.EventData)
-			//	if err := json.Unmarshal([]byte(notification.Extra), &data); err != nil {
-			//		errChan <- err
-			//		continue
-			//	}
-			//}
 
-			*eventsChan <- &types.DatabaseEvent{
-				ListenerUid: listenerUid,
-				ReceivedEvent: &types.ReceivedEvent{
-					Event: event,
-					Data:  &data,
-				},
+			var data map[string]types.EventData
+			if notification.Extra != "" {
+				data = make(map[string]types.EventData)
+				if err := json.Unmarshal([]byte(notification.Extra), &data); err != nil {
+					errChan <- err
+					continue
+				}
+			}
+			var newData, oldData *types.EventData = nil, nil
+			if data != nil {
+				if nd, exists := data["new"]; exists {
+					newData = &nd
+				}
+				if od, exists := data["old"]; exists {
+					oldData = &od
+				}
+			}
+
+			switch operation {
+			case types.OperationInsert:
+				*eventsChan <- &types.DatabaseEvent{
+					ListenerUid: listenerUid,
+					Event:       &types.InsertEvent{New: newData},
+				}
+			case types.OperationUpdate:
+				*eventsChan <- &types.DatabaseEvent{
+					ListenerUid: listenerUid,
+					Event:       &types.UpdateEvent{New: newData, Old: oldData},
+				}
+			case types.OperationDelete:
+				*eventsChan <- &types.DatabaseEvent{
+					ListenerUid: listenerUid,
+					Event:       &types.DeleteEvent{Old: oldData},
+				}
+			case types.OperationTruncate:
+				*eventsChan <- &types.DatabaseEvent{
+					ListenerUid: listenerUid,
+					Event:       &types.TruncateEvent{},
+				}
+			default:
+				return fmt.Errorf("unknown operation: %s", operation)
 			}
 		}
 	}

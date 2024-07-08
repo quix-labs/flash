@@ -6,21 +6,49 @@ type ListenerConfig struct {
 	MaxParallelProcess int      // Default to 1 (not parallel) -> use -1 for Infinity
 }
 
-type Event uint8
+type Operation uint8
 
 const (
-	EventInsert Event = 1 << iota
-	EventUpdate
-	EventDelete
-	EventTruncate
+	OperationInsert Operation = 1 << iota
+	OperationUpdate
+	OperationDelete
+	OperationTruncate
 
-	EventsAll = EventInsert | EventUpdate | EventDelete | EventTruncate
+	OperationAll = OperationInsert | OperationUpdate | OperationDelete | OperationTruncate
 )
 
 type EventData map[string]any
 
-type EventCallback func(event *ReceivedEvent)
-type ReceivedEvent struct {
-	Event Event
-	Data  *EventData
+type EventCallback func(event Event)
+
+type Event interface {
+	GetOperation() Operation
+}
+
+type InsertEvent struct {
+	New *EventData
+}
+type UpdateEvent struct {
+	Old *EventData
+	New *EventData
+}
+type DeleteEvent struct {
+	Old *EventData
+}
+type TruncateEvent struct{}
+
+func (e *InsertEvent) GetOperation() Operation {
+	return OperationInsert
+}
+
+func (e *UpdateEvent) GetOperation() Operation {
+	return OperationUpdate
+}
+
+func (e *DeleteEvent) GetOperation() Operation {
+	return OperationDelete
+}
+
+func (e *TruncateEvent) GetOperation() Operation {
+	return OperationTruncate
 }

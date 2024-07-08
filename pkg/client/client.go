@@ -65,9 +65,9 @@ func (c *Client) Init() error {
 		errChan := make(chan error)
 		go func() {
 			defer wg.Done()
-			err := listener.Init(func(event types.Event) error {
+			err := listener.Init(func(event types.Operation) error {
 				return c.Config.Driver.HandleEventListenStart(listenerUid, listener.Config, &event)
-			}, func(event types.Event) error {
+			}, func(event types.Operation) error {
 				return c.Config.Driver.HandleEventListenStop(listenerUid, listener.Config, &event)
 			})
 			errChan <- err
@@ -104,7 +104,7 @@ func (c *Client) Start() error {
 			if !exists {
 				return fmt.Errorf("listener %s not found", receivedEvent.ListenerUid) // I think simply can be ignored
 			}
-			listener.Dispatch(receivedEvent.ReceivedEvent)
+			listener.Dispatch(&receivedEvent.Event)
 		case err := <-errChan:
 			return err
 		}

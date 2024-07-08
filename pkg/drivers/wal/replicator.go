@@ -172,6 +172,5 @@ func (d *Driver) restartConn() error {
 		return err
 	}
 	d._clientConfig.Logger.Debug().Msg("Started replication slot: " + d.Config.ReplicationSlot)
-	fmt.Println(replicationOptions.PluginArgs)
 	return nil
 }

@@ -12,8 +12,17 @@ func main() {
 		Table:  "public.posts",
 		Fields: []string{"id", "slug"},
 	})
-	postsListener.On(types.EventsAll, func(event *types.ReceivedEvent) {
-		fmt.Printf("Event received: %+v\n", event)
+	postsListener.On(types.OperationAll, func(event types.Event) {
+		switch typedEvent := event.(type) {
+		case *types.InsertEvent:
+			fmt.Printf("insert - new: %+v\n", typedEvent.New)
+		case *types.UpdateEvent:
+			fmt.Printf("update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
+		case *types.DeleteEvent:
+			fmt.Printf("delete - old: %+v \n", typedEvent.Old)
+		case *types.TruncateEvent:
+			fmt.Printf("truncate \n")
+		}
 	})
 
 	// Create client

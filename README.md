@@ -2,23 +2,20 @@
 
 Flash is a lightweight Go library for managing real-time PostgreSQL changes using event management.
 
-The package automatically creates triggers at runtime, listens for them, and broadcasts changes to your applications.
-
-Currently, it uses PostgreSQL's `pg_notify` system under the hood.
-
 ## Features
 
-- Efficient event management.
-- Dynamic creation and deletion of PostgreSQL triggers.
+- Start/Stop listening during runtime.
 - Supports common PostgreSQL events: Insert, Update, Delete, Truncate.
+- Listen changes using WAL replication (using wal driver, default is set to trigger)
+- Extendable drivers (for listening changes)
 
 ## Notes
+
 **This library is currently under active development.**
 
 Features and APIs may change.
 
 Contributions and feedback are welcome!
-
 
 ## Installation
 
@@ -27,6 +24,7 @@ To install the library, run:
 ```bash
 go get github.com/quix-labs/flash
 ```
+
 ## Usage
 
 Here's a basic example of how to use Flash:
@@ -48,8 +46,17 @@ func main() {
 	// Example with listener and client setup
 	postsListenerConfig := &types.ListenerConfig{Table: "public.posts"}
 	postsListener := listeners.NewListener(postsListenerConfig)
-	postsListener.On(types.EventsAll, func(event *types.ReceivedEvent) {
-		fmt.Printf("Event received: %+v\n", event)
+	postsListener.On(types.OperationAll, func(event types.Event) {
+		switch typedEvent := event.(type) {
+		case *types.InsertEvent:
+			fmt.Printf("insert - new: %+v\n", typedEvent.New)
+		case *types.UpdateEvent:
+			fmt.Printf("update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
+		case *types.DeleteEvent:
+			fmt.Printf("delete - old: %+v \n", typedEvent.Old)
+		case *types.TruncateEvent:
+			fmt.Printf("truncate \n")
+		}
 	})
 
 	// Create client
@@ -68,7 +75,6 @@ func main() {
 
 	fmt.Println("Program terminated.")
 }
-
 ```
 
 For more detailed examples, check out the following files:
@@ -79,27 +85,24 @@ For more detailed examples, check out the following files:
 - [Listen for specific fields](examples/specific_fields/specific_fields.go)
 - [Parallel Callback](examples/parallel_callback/parallel_callback.go)
 
-## Drivers
-You can see all drivers details [here](pkg/drivers/DRIVERS.md)
-
 ## DX - Features / Planned Features
 
 The following features are planned for future implementation:
 
-- [x] Driver interfaces for creating new drivers.
-- [x] Listen for changes in specific columns, not the entire row.
-- [x] Parallel Callback execution using goroutine
-- [ ] Remove client in favor of direct listener start
-- [ ] Support attaching/detaching new listener during runtime.
-- [ ] Soft-delete support: receive delete events when SQL condition is respected. Example: `deleted_at IS NOT NULL`.
-- [ ] More performant driver. See [DRIVERS.md](pkg/drivers/DRIVERS.md)
-- [ ] Tests implementation
+- ✅ Driver interfaces for creating new drivers.
+- ✅ Parallel Callback execution using goroutine
+- ✅ Listen for changes in specific columns, not the entire row. Driver specific see [drivers/README.md](pkg/drivers/README.md)
+- ⌛ More performant driver. See [drivers/README.md](pkg/drivers/README.md)
+- ⬜ Remove client in favor of direct listener start
+- ⬜ Support attaching/detaching new listener during runtime.
+- ⬜ Soft-delete support: receive delete events when SQL condition is respected. Example: `deleted_at IS NOT NULL`.
+- ⬜ Tests implementation
 - ... any feedback is welcome.
 
-## Additional Details
 
-You can find a temporary workflow graph [here](WORKFLOW.md).
+## Drivers
 
+You can see all drivers details [here](pkg/drivers/README.md)
 
 ## Contributing
 
@@ -108,7 +111,6 @@ You can find a temporary workflow graph [here](WORKFLOW.md).
 3. Commit your changes.
 4. Push your branch.
 5. Create a pull request.
-
 
 ## Credits
 

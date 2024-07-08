@@ -33,8 +33,8 @@ func NewDriver(config *DriverConfig) *Driver {
 
 // TODO
 type PublicationState map[string]*struct {
-	listenedEvents  []types.Event
-	listenerMapping map[types.Event]struct {
+	listenedEvents  []types.Operation
+	listenerMapping map[types.Operation]struct {
 		_listenerUid *string
 		_config      *types.ListenerConfig
 	}
@@ -53,8 +53,7 @@ type Driver struct {
 	activeListeners    map[string]map[string]*types.ListenerConfig // key 1: tableName -> key 2: listenerUid
 	eventsChan         *types.DatabaseEventsChan
 
-	subChan   chan *subscription
-	unsubChan chan *subscription
+	subscriptionState *subscriptionState
 
 	_clientConfig *types.ClientConfig
 }
@@ -73,7 +72,7 @@ func (d *Driver) Init(clientConfig *types.ClientConfig) error {
 	return nil
 }
 
-func (d *Driver) HandleEventListenStart(listenerUid string, listenerConfig *types.ListenerConfig, event *types.Event) error {
+func (d *Driver) HandleEventListenStart(listenerUid string, listenerConfig *types.ListenerConfig, event *types.Operation) error {
 	tableName := d.sanitizeTableName(listenerConfig.Table, false)
 
 	//TODO ALTER PUBLICATION noinsert SET (publish = 'update, delete');
@@ -83,7 +82,7 @@ func (d *Driver) HandleEventListenStart(listenerUid string, listenerConfig *type
 
 	// Keep in goroutine because channel is listened on start
 	go func() {
-		d.subChan <- &subscription{
+		d.subscriptionState.subChan <- &subscriptionClaim{
 			listenerUid:    listenerUid,
 			listenerConfig: listenerConfig,
 			event:          event,
@@ -94,12 +93,12 @@ func (d *Driver) HandleEventListenStart(listenerUid string, listenerConfig *type
 	return nil
 }
 
-func (d *Driver) HandleEventListenStop(listenerUid string, listenerConfig *types.ListenerConfig, event *types.Event) error {
+func (d *Driver) HandleEventListenStop(listenerUid string, listenerConfig *types.ListenerConfig, event *types.Operation) error {
 	tableName := d.sanitizeTableName(listenerConfig.Table, false)
 
 	// Keep in goroutine because channel is listened on start
 	go func() {
-		d.unsubChan <- &subscription{
+		d.subscriptionState.unsubChan <- &subscriptionClaim{
 			listenerUid:    listenerUid,
 			listenerConfig: listenerConfig,
 			event:          event,
