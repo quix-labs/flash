@@ -42,6 +42,7 @@ sequenceDiagram
                 Client ->> Driver: send listen for delete signal
                 Driver ->> Database: ALTER PUBLICATION ...
             end
+
         and
             note over Your App, External: Handle KeepAlive
             loop Handle KeepAlive
@@ -54,36 +55,7 @@ sequenceDiagram
                 Driver ->> Database: send keepalive
             end
         and
-            note over Your App, External: Handle Streamed TX
-            External -->> Database: BEGIN TRANSACTION
-            Database -->> Driver: send stream start
-            loop
-                Database -->> Driver: send XLogData
-                Driver ->> Driver: Parse data and stack in queue
-            end
-            Driver ->> Driver: Wait for stream commit/rollback
-        and
-            note over Your App, External: Handle stream rollback
-            External -->> Database: ROLLBACK
-            Database -->> Driver: send stream rollback
-            Driver ->> Driver: remove queue
-            Driver ->> Database: FLUSH POSITION
-        and
-            note over Your App, External: Handle stream Commit
-            External -->> Database: COMMIT
-            Database -->> Driver: send stream commit
-            activate Driver
-            loop For each queued event
-                loop For each concerned listeners
-                    Driver -->> Client: Send event
-                    Client -->> Listener: Notify listener
-                    Listener -->> Your App: Event processed
-                end
-            end
-            Driver ->> Database: FLUSH POSITION
-            deactivate Driver
-        and
-            note over Your App, External: Handle XLogData
+            note over Your App, External: Handle XLogData (not prevented)
             loop
                 External -->> Database: DELETE FROM ...
                 Database --) Driver: Write WAL
@@ -96,6 +68,40 @@ sequenceDiagram
                 Driver ->> Database: FLUSH POSITION
                 deactivate Driver
             end
+        and
+            note over Your App, External: Handle StreamStart
+            External -->> Database: BEGIN TRANSACTION
+            Database -->> Driver: send stream start
+            Driver ->> Driver: Preventing XLogData processing
+        and
+            note over Your App, External: Handle StreamStop
+            Driver ->> Driver: Stop preventing XLogData processing
+        and
+            note over Your App, External: Handle XLogData (prevented)
+            loop
+                Database -->> Driver: send XLogData
+                Driver ->> Driver: Parse data and stack in queue
+            end
+        and
+            note over Your App, External: Handle StreamAbort
+            External -->> Database: ROLLBACK
+            Database -->> Driver: send stream rollback
+            Driver ->> Driver: remove queue
+            Driver ->> Database: FLUSH POSITION
+        and
+            note over Your App, External: Handle StreamCommit
+            External -->> Database: COMMIT
+            Database -->> Driver: send stream commit
+            activate Driver
+            loop For each queued event
+                loop For each concerned listeners
+                    Driver -->> Client: Send event
+                    Client -->> Listener: Notify listener
+                    Listener -->> Your App: Event processed
+                end
+            end
+            Driver ->> Database: FLUSH POSITION
+            deactivate Driver
         end
     end
     rect rgba(248,113,113,0.5)
