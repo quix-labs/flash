@@ -18,6 +18,9 @@ sequenceDiagram
     rect rgba(250,204,21,0.5)
         note over Your App, External: Starting
         Your App ->> Client: start()
+        Client ->> Driver: driver.Init()
+        Client ->> Driver: driver.Start()
+        Driver ->> Database: CREATE SCHEMA ...
         loop For each actives listeners
             Client ->> Listener: Listener.Init()
             loop For each listened operations
