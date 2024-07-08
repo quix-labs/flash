@@ -2,13 +2,6 @@
 
 Flash is a lightweight Go library for managing real-time PostgreSQL changes using event management.
 
-## Features
-
-- Start/Stop listening during runtime.
-- Supports common PostgreSQL events: Insert, Update, Delete, Truncate.
-- Listen changes using WAL replication (using wal driver, default is set to trigger)
-- Extendable drivers (for listening changes)
-
 ## Notes
 
 **This library is currently under active development.**
@@ -16,6 +9,27 @@ Flash is a lightweight Go library for managing real-time PostgreSQL changes usin
 Features and APIs may change.
 
 Contributions and feedback are welcome!
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Advanced Features](#advanced-features)
+- [DX - Features / Planned Features](#planned-features)
+- [Drivers](#drivers)
+- [Contributing](#contributing)
+- [Credits](#credits)
+- [License](#license)
+
+## Features
+
+- ✅ Start/Stop listening during runtime.
+- ✅ Supports common PostgreSQL events: Insert, Update, Delete, Truncate.
+- ✅ Driver interfaces for creating new drivers.
+- ✅ Parallel Callback execution using goroutine
+- ✅ Listen for changes in specific columns, not the entire row.
+- ✅ Listen changes using WAL replication (see [Drivers](#drivers) for more information)
 
 ## Installation
 
@@ -85,20 +99,46 @@ For more detailed examples, check out the following files:
 - [Listen for specific fields](examples/specific_fields/specific_fields.go)
 - [Parallel Callback](examples/parallel_callback/parallel_callback.go)
 
-## DX - Features / Planned Features
+## Advanced Features
+
+### 1. Configurable Primary Key
+
+When you define a primary key, instead of receiving an update event when the column changes, you will receive two
+events:
+
+- A delete event with the old value of this column (and other fields).
+- An insert event with the new value of this column (and other fields).
+
+### 2. Where Clauses
+
+You can configure conditions, and if a database row does not match the criteria, you will not receive any event.
+
+In the case of an update:
+
+- If the row previously matched the criteria but the new row does not, you will receive a delete event.
+- If the row previously did not match the criteria but the new row does, you will receive an insert event.
+
+### 3. Partial Fields
+
+Ability to listen only to certain columns in your table. If no changes occur in one of these columns, you will not
+receive any event.
+
+### ⚠️ Important Notes ⚠️
+
+Some of these features may be incompatible with your driver.
+
+Check [drivers/README.md](pkg/drivers/README.md) to see if the driver you have chosen supports these features.
+
+## Planned Features
 
 The following features are planned for future implementation:
 
-- ✅ Driver interfaces for creating new drivers.
-- ✅ Parallel Callback execution using goroutine
-- ✅ Listen for changes in specific columns, not the entire row. Driver specific see [drivers/README.md](pkg/drivers/README.md)
-- ✅ More performant driver. See [drivers/README.md](pkg/drivers/README.md)
+- ⏳ Soft-delete support: receive delete events when SQL condition is respected. Example: `deleted_at IS NOT NULL`.
+- ⏳ Handling custom primary for fake insert/delete when change appears
 - ⬜ Remove client in favor of direct listener start
 - ⬜ Support attaching/detaching new listener during runtime.
-- ⬜ Soft-delete support: receive delete events when SQL condition is respected. Example: `deleted_at IS NOT NULL`.
 - ⬜ Tests implementation
 - ... any feedback is welcome.
-
 
 ## Drivers
 

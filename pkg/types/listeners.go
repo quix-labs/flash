@@ -4,7 +4,20 @@ type ListenerConfig struct {
 	Table              string   // Can be prefixed by schema - e.g: public.posts
 	Fields             []string // Empty fields means all ( SELECT * )
 	MaxParallelProcess int      // Default to 1 (not parallel) -> use -1 for Infinity
+
+	Conditions []*ListenerCondition
 }
+
+/**---------------------------------------------------CONDITIONS------------------------------------------------------*/
+
+// TODO SORTIR VERIFICATION AU NIVEAU LISTENER, PBM oblige à envoyer les columns dans l'event
+type ListenerCondition struct {
+	Column string
+	//Operator string //TODO actually only equals are implemented
+	Value any
+}
+
+/**---------------------------------------------------OPERATION-------------------------------------------------------*/
 
 type Operation uint8
 
@@ -16,6 +29,8 @@ const (
 
 	OperationAll = OperationInsert | OperationUpdate | OperationDelete | OperationTruncate
 )
+
+/**-----------------------------------------------------EVENT---------------------------------------------------------*/
 
 type EventData map[string]any
 

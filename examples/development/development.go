@@ -25,8 +25,17 @@ func main() {
 		Table:              "public.posts",
 		MaxParallelProcess: 1, // In most case 1 is ideal because sync between goroutine introduce some delay
 		Fields:             []string{"id", "slug"},
+		Conditions:         []*types.ListenerCondition{{Column: "active", Value: true}},
 	}
 	postsListener, _ := listeners.NewListener(postsListenerConfig)
+
+	postsListener2Config := &types.ListenerConfig{
+		Table:              "public.posts",
+		MaxParallelProcess: 1, // In most case 1 is ideal because sync between goroutine introduce some delay
+		Fields:             []string{"active"},
+		Conditions:         []*types.ListenerCondition{{Column: "slug", Value: nil}},
+	}
+	postsListener2, _ := listeners.NewListener(postsListener2Config)
 
 	// Registering your callbacks
 	var i = 0
@@ -59,35 +68,45 @@ func main() {
 		}
 	}()
 
-	stopTruncate, err := postsListener.On(types.OperationTruncate, func(event types.Event) {
+	stopAll2, err := postsListener2.On(types.OperationAll, func(event types.Event) {
 		mutex.Lock()
 		i++
 		mutex.Unlock()
-		typedEvent := event.(*types.TruncateEvent)
-		fmt.Println(typedEvent.GetOperation())
+
+		switch typedEvent := event.(type) {
+		case *types.InsertEvent:
+			fmt.Printf("2-insert - new: %+v\n", typedEvent.New)
+		case *types.UpdateEvent:
+			fmt.Printf("2-update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
+		case *types.DeleteEvent:
+			fmt.Printf("2-delete - old: %+v \n", typedEvent.Old)
+		case *types.TruncateEvent:
+			fmt.Printf("2-truncate \n")
+		}
 	})
 	if err != nil {
 		panic(err)
 	}
 
 	defer func() {
-		err := stopTruncate()
+		err := stopAll2()
 		if err != nil {
 			panic(err)
 		}
 	}()
-	go func() {
-		for {
-			time.Sleep(time.Second * 1)
-			mutex.Lock()
-			fmt.Println(i)
-			i = 0
-			mutex.Unlock()
-		}
-	}()
+
+	//go func() {
+	//	for {
+	//		time.Sleep(time.Second * 1)
+	//		mutex.Lock()
+	//		fmt.Println(i)
+	//		i = 0
+	//		mutex.Unlock()
+	//	}
+	//}()
 
 	// Create custom logger
-	logger := zerolog.New(os.Stdout).Level(zerolog.TraceLevel).With().Caller().Stack().Timestamp().Logger()
+	logger := zerolog.New(os.Stdout).Level(zerolog.DebugLevel).With().Caller().Stack().Timestamp().Logger()
 
 	driver := wal_logical.NewDriver(&wal_logical.DriverConfig{
 		//UseStreaming: true,
@@ -102,6 +121,7 @@ func main() {
 	}
 	flashClient, _ := client.NewClient(clientConfig)
 	flashClient.Attach(postsListener)
+	flashClient.Attach(postsListener2)
 
 	// Start listening
 	go func() {

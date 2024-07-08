@@ -118,6 +118,7 @@ func (d *Driver) startReplicator() error {
 					nextStandbyMessageDeadline = time.Time{} // Force resend standby message
 				}
 			}
+
 		}
 	}
 }

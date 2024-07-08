@@ -60,6 +60,11 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			return false, err
 		}
 		for listenerUid, listenerConfig := range listeners {
+
+			if !d.checkConditions(newData, listenerConfig.Conditions) {
+				continue
+			}
+
 			reducedNewData := d.ExtractFields(newData, listenerConfig.Fields)
 			*d.eventsChan <- &types.DatabaseEvent{
 				ListenerUid: listenerUid,
@@ -95,8 +100,33 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			return false, err
 		}
 		for listenerUid, listenerConfig := range listeners {
-			// TODO SOFTDELETE  POSTGRES >15 ALLOW WHERE ON PUBLICATION
-			// @link https://www.postgresql.org/docs/current/sql-alterpublication.html
+
+			if len(listenerConfig.Conditions) > 0 {
+				// HANDLING CONDITIONS - e.g: SOFT DELETE
+				oldRespectConditions := d.checkConditions(oldData, listenerConfig.Conditions)
+				newRespectConditions := d.checkConditions(newData, listenerConfig.Conditions)
+				if !oldRespectConditions && !newRespectConditions {
+					continue
+				}
+
+				if !oldRespectConditions && newRespectConditions {
+					// IN THIS CASE, THIS IS AN INSERT
+					*d.eventsChan <- &types.DatabaseEvent{
+						ListenerUid: listenerUid,
+						Event:       &types.InsertEvent{New: d.ExtractFields(newData, listenerConfig.Fields)},
+					}
+					continue
+				}
+
+				if oldRespectConditions && !newRespectConditions {
+					// IN THIS CASE, THIS IS A DELETE
+					*d.eventsChan <- &types.DatabaseEvent{
+						ListenerUid: listenerUid,
+						Event:       &types.DeleteEvent{Old: d.ExtractFields(oldData, listenerConfig.Fields)},
+					}
+					continue
+				}
+			}
 
 			reducedOldData := d.ExtractFields(oldData, listenerConfig.Fields)
 			reducedNewData := d.ExtractFields(newData, listenerConfig.Fields)
@@ -131,6 +161,11 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			return false, err
 		}
 		for listenerUid, listenerConfig := range listeners {
+
+			if !d.checkConditions(oldData, listenerConfig.Conditions) {
+				continue
+			}
+
 			reducedOldData := d.ExtractFields(oldData, listenerConfig.Fields)
 			*d.eventsChan <- &types.DatabaseEvent{
 				ListenerUid: listenerUid,
@@ -263,4 +298,14 @@ func (d *Driver) decodeTextColumnData(data []byte, dataType uint32) (interface{}
 		return dt.Codec.DecodeValue(d.replicationState.typeMap, dataType, pgtype.TextFormatCode, data)
 	}
 	return string(data), nil
+}
+
+func (d *Driver) checkConditions(data *types.EventData, conditions []*types.ListenerCondition) bool {
+	for _, condition := range conditions {
+		value := (*data)[condition.Column]
+		if value != condition.Value {
+			return false
+		}
+	}
+	return true
 }
