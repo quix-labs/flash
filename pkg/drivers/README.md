@@ -4,8 +4,8 @@
 
 | Name                                 |  DB impact   | Operations | Partial Fields | Custom Conditions | Configurable primary key |                   Graceful Shutdown/Restart                    |
 |--------------------------------------|:------------:|:----------:|:--------------:|:-----------------:|:------------------------:|:--------------------------------------------------------------:|
-| [trigger](./trigger/README.md)       | high&nbsp;⚠️ |     ✅      |      All       |         ⏳         |     not implemented      |                               ✅                                |
-| [wal_logical](wal_logical/README.md) |  low&nbsp;⚡  |     ✅      |      All       |         ✅         |     not implemented      | partial ⚠️ <br/>cannot restart if crash without client.Close() |
+| [trigger](./trigger/README.md)       | high&nbsp;⚠️ |    All     |       ✅        |         ⏳         |     not implemented      |                               ✅                                |
+| [wal_logical](wal_logical/README.md) |  low&nbsp;⚡  |    All     |       ✅        |         ✅         |     not implemented      | partial ⚠️ <br/>cannot restart if crash without client.Close() |
 
 ## NOT IMPLEMENTED
 
