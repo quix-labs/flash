@@ -3,27 +3,27 @@ package main
 import (
 	"fmt"
 	"github.com/quix-labs/flash/pkg/client"
+	"github.com/quix-labs/flash/pkg/drivers/wal"
 	"github.com/quix-labs/flash/pkg/listeners"
 	"github.com/quix-labs/flash/pkg/types"
 	"github.com/rs/zerolog"
 	"os"
 	"os/signal"
-	"runtime/pprof"
 	"sync"
 	"time"
 )
 
 func main() {
-	f, err := os.Create("myprogram.prof")
-	if err != nil {
-		panic(err)
-	}
-	pprof.StartCPUProfile(f)
-	defer pprof.StopCPUProfile()
+	//f, err := os.Create("myprogram.prof")
+	//if err != nil {
+	//	panic(err)
+	//}
+	//pprof.StartCPUProfile(f)
+	//defer pprof.StopCPUProfile()
 
 	postsListenerConfig := &types.ListenerConfig{
 		Table:              "public.posts",
-		MaxParallelProcess: 1,
+		MaxParallelProcess: 1, // In most case 1 is ideal because sync between goroutine introduce some delay
 		Fields:             []string{"id", "slug"},
 	}
 	postsListener, _ := listeners.NewListener(postsListenerConfig)
@@ -35,6 +35,7 @@ func main() {
 		mutex.Lock()
 		i++
 		mutex.Unlock()
+		//fmt.Printf("%d - %+v\n", event.Event, event.Data)
 	})
 	if err != nil {
 		panic(err)
@@ -48,23 +49,25 @@ func main() {
 
 	go func() {
 		for {
-			time.Sleep(time.Second)
+			time.Sleep(time.Second * 1)
 			mutex.Lock()
 			fmt.Println(i)
 			i = 0
 			mutex.Unlock()
 		}
-
 	}()
 
 	// Create custom logger
-	logger := zerolog.New(os.Stdout).Level(zerolog.TraceLevel).With().Stack().Timestamp().Logger()
+	logger := zerolog.New(os.Stdout).Level(zerolog.DebugLevel).With().Caller().Stack().Timestamp().Logger()
+
+	driver := wal.NewDriver(&wal.DriverConfig{UseStreaming: true})
 
 	// Create client
 	clientConfig := &types.ClientConfig{
 		DatabaseCnx:     "postgresql://devuser:devpass@localhost:5432/devdb",
 		Logger:          &logger, // Define your custom zerolog.Logger here
 		ShutdownTimeout: time.Second * 2,
+		Driver:          driver,
 	}
 	flashClient, _ := client.NewClient(clientConfig)
 	flashClient.Attach(postsListener)

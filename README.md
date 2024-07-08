@@ -77,6 +77,7 @@ For more detailed examples, check out the following files:
 - [Trigger insert events on table](examples/trigger_insert/trigger_insert.go)
 - [Trigger all events on table](examples/trigger_all/trigger_all.go)
 - [Listen for specific fields](examples/specific_fields/specific_fields.go)
+- [Parallel Callback](examples/parallel_callback/parallel_callback.go)
 
 ## Drivers
 You can see all drivers details [here](pkg/drivers/DRIVERS.md)
@@ -87,6 +88,7 @@ The following features are planned for future implementation:
 
 - [x] Driver interfaces for creating new drivers.
 - [x] Listen for changes in specific columns, not the entire row.
+- [x] Parallel Callback execution using goroutine
 - [ ] Remove client in favor of direct listener start
 - [ ] Support attaching/detaching new listener during runtime.
 - [ ] Soft-delete support: receive delete events when SQL condition is respected. Example: `deleted_at IS NOT NULL`.
