@@ -1,4 +1,4 @@
-package wal
+package wal_replica
 
 import (
 	"github.com/jackc/pgx/v5/pgconn"

@@ -1,4 +1,4 @@
-package wal
+package wal_replica
 
 import (
 	"fmt"

@@ -2,10 +2,10 @@
 
 ## Implemented
 
-| Name                           | DB impact | INSERT | UPDATE | DELETE | TRUNCATE | Support Partial Fields |       Where clauses        |                   Graceful Shutdown/Restart                    |
-|--------------------------------|:---------:|:------:|:------:|:------:|:--------:|:----------------------:|:--------------------------:|:--------------------------------------------------------------:|
-| [trigger](./trigger/README.md) | high  ⚠️  |   ✅    |   ✅    |   ✅    |    ✅     |           ✅            | not implemented (possible) |                               ✅                                |
-| [wal](./wal/README.md)         |   low ⚡   |   ✅    |   ✅    |   ✅    |    ✅     |     ❌ ***(wip)***      | not implemented (possible) | partial ⚠️ <br/>cannot restart if crash without client.Close() |
+| Name                                 | DB impact | INSERT | UPDATE | DELETE | TRUNCATE | Support Partial Fields |       Where clauses        |                   Graceful Shutdown/Restart                    |
+|--------------------------------------|:---------:|:------:|:------:|:------:|:--------:|:----------------------:|:--------------------------:|:--------------------------------------------------------------:|
+| [trigger](./trigger/README.md)       | high  ⚠️  |   ✅    |   ✅    |   ✅    |    ✅     |           ✅            | not implemented (possible) |                               ✅                                |
+| [wal_replica](wal_replica/README.md) |   low ⚡   |   ✅    |   ✅    |   ✅    |    ✅     |     ❌ ***(wip)***      | not implemented (possible) | partial ⚠️ <br/>cannot restart if crash without client.Close() |
 
 ## NOT IMPLEMENTED
 
