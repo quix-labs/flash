@@ -12,15 +12,18 @@ Contributions and feedback are welcome!
 
 ## Table of Contents
 
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Advanced Features](#advanced-features)
-- [DX - Features / Planned Features](#planned-features)
-- [Drivers](#drivers)
-- [Contributing](#contributing)
-- [Credits](#credits)
-- [License](#license)
+* [Features](#features)
+* [Installation](#installation)
+* [Usage](#usage)
+* [Advanced Features](#advanced-features)
+    * [1. Configurable Primary Key ⏳](#1-configurable-primary-key-)
+    * [2. Custom Conditions ⏳](#2-custom-conditions-)
+    * [3. Partial Fields ✅](#3-partial-fields-)
+* [Planned Features](#planned-features)
+* [Drivers](#drivers)
+* [Contributing](#contributing)
+* [Credits](#credits)
+* [License](#license)
 
 ## Features
 
@@ -28,8 +31,8 @@ Contributions and feedback are welcome!
 - ✅ Supports common PostgreSQL events: Insert, Update, Delete, Truncate.
 - ✅ Driver interfaces for creating new drivers.
 - ✅ Parallel Callback execution using goroutine
-- ✅ Listen for changes in specific columns, not the entire row.
-- ✅ Listen changes using WAL replication (see [Drivers](#drivers) for more information)
+- ✅ Listen for changes in specific columns, not the entire row. (see [Advanced Features](#advanced-features))
+- ✅ Listen changes using WAL replication (see [Drivers](#drivers))
 
 ## Installation
 
@@ -101,7 +104,7 @@ For more detailed examples, check out the following files:
 
 ## Advanced Features
 
-### 1. Configurable Primary Key
+### 1. Configurable Primary Key ⏳
 
 When you define a primary key, instead of receiving an update event when the column changes, you will receive two
 events:
@@ -109,7 +112,7 @@ events:
 - A delete event with the old value of this column (and other fields).
 - An insert event with the new value of this column (and other fields).
 
-### 2. Where Clauses
+### 2. Custom Conditions ⏳
 
 You can configure conditions, and if a database row does not match the criteria, you will not receive any event.
 
@@ -118,7 +121,7 @@ In the case of an update:
 - If the row previously matched the criteria but the new row does not, you will receive a delete event.
 - If the row previously did not match the criteria but the new row does, you will receive an insert event.
 
-### 3. Partial Fields
+### 3. Partial Fields ✅
 
 Ability to listen only to certain columns in your table. If no changes occur in one of these columns, you will not
 receive any event.
