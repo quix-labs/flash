@@ -47,7 +47,7 @@ sequenceDiagram
             note over Your App, External: Handle KeepAlive
             loop Handle KeepAlive
                 par
-                    Database -->> Driver: claim keepalive
+                    Database --) Driver: claim keepalive
                 and x seconds since last send
                     Driver -->> Driver: Wait x seconds
                 end
@@ -71,27 +71,30 @@ sequenceDiagram
         and
             note over Your App, External: Handle StreamStart
             External -->> Database: BEGIN TRANSACTION
-            Database -->> Driver: send stream start
+            Database --) Driver: send stream start
             Driver ->> Driver: Preventing XLogData processing
         and
             note over Your App, External: Handle StreamStop
             Driver ->> Driver: Stop preventing XLogData processing
         and
             note over Your App, External: Handle XLogData (prevented)
+            External -->> Database: DELETE FROM ...
+            External -->> Database: UPDATE SET ...
+            External -->> Database: INSERT INTO ...
             loop
-                Database -->> Driver: send XLogData
+                Database --) Driver: send XLogData
                 Driver ->> Driver: Parse data and stack in queue
             end
         and
             note over Your App, External: Handle StreamAbort
             External -->> Database: ROLLBACK
-            Database -->> Driver: send stream rollback
+            Database --) Driver: send stream rollback
             Driver ->> Driver: remove queue
             Driver ->> Database: FLUSH POSITION
         and
             note over Your App, External: Handle StreamCommit
             External -->> Database: COMMIT
-            Database -->> Driver: send stream commit
+            Database --) Driver: send stream commit
             activate Driver
             loop For each queued event
                 loop For each concerned listeners
