@@ -55,6 +55,7 @@ sequenceDiagram
             end
         and
             note over Your App, External: Handle Streamed TX
+            External -->> Database: BEGIN TRANSACTION
             Database -->> Driver: send stream start
             loop
                 Database -->> Driver: send XLogData
@@ -63,11 +64,13 @@ sequenceDiagram
             Driver ->> Driver: Wait for stream commit/rollback
         and
             note over Your App, External: Handle stream rollback
+            External -->> Database: ROLLBACK
             Database -->> Driver: send stream rollback
             Driver ->> Driver: remove queue
             Driver ->> Database: FLUSH POSITION
         and
             note over Your App, External: Handle stream Commit
+            External -->> Database: COMMIT
             Database -->> Driver: send stream commit
             activate Driver
             loop For each queued event
