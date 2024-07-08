@@ -1,4 +1,4 @@
-package wal_replica
+package wal_logical
 
 import (
 	"context"

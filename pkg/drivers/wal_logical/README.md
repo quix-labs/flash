@@ -1,4 +1,4 @@
-# WAL driver (wal)
+# WAL Logical driver (wal_logical)
 
 ### Bootstrapping
 

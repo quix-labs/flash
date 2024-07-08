@@ -1,6 +1,6 @@
 ```mermaid
 ---
-title: Interaction workflow for WAL Replica driver
+title: Interaction workflow for WAL Logical driver
 ---
 sequenceDiagram
     participant Your App
