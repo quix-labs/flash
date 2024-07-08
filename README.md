@@ -91,7 +91,7 @@ The following features are planned for future implementation:
 
 - ✅ Driver interfaces for creating new drivers.
 - ✅ Parallel Callback execution using goroutine
-- ✅ Listen for changes in specific columns, not the entire row. Driver specific see [drivers/README.md](pkg/drivers/README.md)
+- 🟨 Listen for changes in specific columns, not the entire row. Driver specific see [drivers/README.md](pkg/drivers/README.md)
 - ⌛ More performant driver. See [drivers/README.md](pkg/drivers/README.md)
 - ⬜ Remove client in favor of direct listener start
 - ⬜ Support attaching/detaching new listener during runtime.
