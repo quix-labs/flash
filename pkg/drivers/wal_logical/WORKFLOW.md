@@ -10,7 +10,7 @@ sequenceDiagram
     participant Database
     participant External
     rect rgba(34,211,238,0.5)
-        note over Your App, External: Bootstraping
+        note over Your App, External: Bootstrapping
         Your App ->> Listener: on(eventUpdate^EventInsert)
         Your App ->> Client: AddListener(listener)
     end
@@ -21,14 +21,14 @@ sequenceDiagram
         Client ->> Driver: driver.Start()
         Driver ->> Database: CREATE PUBLICATION "...-init"
         Driver ->> Database: CREATE REPLICATION_SLOT "...-slot" TEMPORARY
-        loop For each actives listeners
+        loop For each active listener
             Client ->> Listener: Listener.Init()
-            loop For each listened operations
+            loop For each listened operation
                 Listener ->> Client: start listening for operation
                 Client ->> Driver: send start listening signal for operation
                 Driver ->> Database: CREATE PUBLICATION SLOT ...
                 Driver -->> Driver: Restart connection to handle new slot
-                Driver -->> Driver: Wait connection restarted
+                Driver -->> Driver: Wait for connection restart
             end
         end
     end
@@ -59,7 +59,7 @@ sequenceDiagram
                 External -->> Database: DELETE FROM ...
                 Database --) Driver: Write WAL
                 activate Driver
-                loop For each concerned listeners
+                loop For each concerned listener
                     Driver -->> Client: Parse data and send event
                     Client -->> Listener: Notify listener
                     Listener -->> Your App: Event processed
@@ -96,7 +96,7 @@ sequenceDiagram
             Database --) Driver: send stream commit
             activate Driver
             loop For each queued event
-                loop For each concerned listeners
+                loop For each concerned listener
                     Driver -->> Client: Send event
                     Client -->> Listener: Notify listener
                     Listener -->> Your App: Event processed
@@ -109,9 +109,9 @@ sequenceDiagram
     rect rgba(248,113,113,0.5)
         Note over Your App, External: Application Shutdown
         Your App ->> Client: stop()
-        loop For each actives listeners
+        loop For each active listener
             Client ->> Listener: Listener.Close()
-            loop For each listened Operation
+            loop For each listened operation
                 Listener ->> Client: stop listening for operation
                 Client ->> Driver: send stop listening signal for operation
                 Driver ->> Database: DROP PUBLICATION ...
