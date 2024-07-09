@@ -40,6 +40,10 @@ To install the library, run:
 
 ```bash
 go get github.com/quix-labs/flash@main # Actually main is used for development
+
+# Write your main package
+
+go mod tidy # Actually needed to download nested dependencies - Working on proper pre-install during previous go get
 ```
 
 ## Usage
