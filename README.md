@@ -39,7 +39,8 @@ Contributions and feedback are welcome!
 To install the library, run:
 
 ```bash
-go get github.com/quix-labs/flash@main # Actually main is used for development
+go get -u github.com/quix-labs/flash@main # Actually main is used for development
+go get -u github.com/quix-labs/flash/drivers/trigger@main # Show below to for other drivers
 
 # Write your main package
 

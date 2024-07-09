@@ -275,6 +275,10 @@ func (d *Driver) parseTuple(relationID uint32, tuple *pglogrepl.TupleData) (*fla
 }
 
 func (d *Driver) ExtractFields(data *flash.EventData, fields []string) *flash.EventData {
+	if len(fields) == 0 { // Empty same as SELECT *
+		return data
+	}
+
 	reducedData := flash.EventData{}
 	for _, field := range fields {
 		reducedData[field] = (*data)[field]
