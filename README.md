@@ -39,7 +39,7 @@ Contributions and feedback are welcome!
 To install the library, run:
 
 ```bash
-go get github.com/quix-labs/flash
+go get github.com/quix-labs/flash@main # Actually main is used for development
 ```
 
 ## Usage

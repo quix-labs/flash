@@ -160,7 +160,7 @@ func (d *Driver) restartConn() error {
 	replicationOptions := pglogrepl.StartReplicationOptions{
 		Mode: pglogrepl.LogicalReplication,
 		PluginArgs: []string{
-			"proto_version '2'",
+			"proto_version '2'", // Keep as version 2 to compatibility
 			"publication_names '" + strings.Join(activePublications, ", ") + "'",
 			"messages 'true'",
 		},
