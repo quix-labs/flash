@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/jackc/pglogrepl"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/quix-labs/flash/pkg/types"
+	"github.com/quix-labs/flash"
 	"reflect"
 )
 
@@ -66,9 +66,9 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			}
 
 			reducedNewData := d.ExtractFields(newData, listenerConfig.Fields)
-			*d.eventsChan <- &types.DatabaseEvent{
+			*d.eventsChan <- &flash.DatabaseEvent{
 				ListenerUid: listenerUid,
-				Event:       &types.InsertEvent{New: reducedNewData},
+				Event:       &flash.InsertEvent{New: reducedNewData},
 			}
 		}
 
@@ -111,18 +111,18 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 
 				if !oldRespectConditions && newRespectConditions {
 					// IN THIS CASE, THIS IS AN INSERT
-					*d.eventsChan <- &types.DatabaseEvent{
+					*d.eventsChan <- &flash.DatabaseEvent{
 						ListenerUid: listenerUid,
-						Event:       &types.InsertEvent{New: d.ExtractFields(newData, listenerConfig.Fields)},
+						Event:       &flash.InsertEvent{New: d.ExtractFields(newData, listenerConfig.Fields)},
 					}
 					continue
 				}
 
 				if oldRespectConditions && !newRespectConditions {
 					// IN THIS CASE, THIS IS A DELETE
-					*d.eventsChan <- &types.DatabaseEvent{
+					*d.eventsChan <- &flash.DatabaseEvent{
 						ListenerUid: listenerUid,
-						Event:       &types.DeleteEvent{Old: d.ExtractFields(oldData, listenerConfig.Fields)},
+						Event:       &flash.DeleteEvent{Old: d.ExtractFields(oldData, listenerConfig.Fields)},
 					}
 					continue
 				}
@@ -133,9 +133,9 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			if d.CheckEquals(reducedNewData, reducedOldData) {
 				continue //Ignore event if update is not in listener fields
 			}
-			*d.eventsChan <- &types.DatabaseEvent{
+			*d.eventsChan <- &flash.DatabaseEvent{
 				ListenerUid: listenerUid,
-				Event:       &types.UpdateEvent{Old: reducedOldData, New: reducedNewData},
+				Event:       &flash.UpdateEvent{Old: reducedOldData, New: reducedNewData},
 			}
 		}
 
@@ -167,9 +167,9 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			}
 
 			reducedOldData := d.ExtractFields(oldData, listenerConfig.Fields)
-			*d.eventsChan <- &types.DatabaseEvent{
+			*d.eventsChan <- &flash.DatabaseEvent{
 				ListenerUid: listenerUid,
-				Event:       &types.DeleteEvent{Old: reducedOldData},
+				Event:       &flash.DeleteEvent{Old: reducedOldData},
 			}
 		}
 
@@ -192,9 +192,9 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 				break
 			}
 			for listenerUid, _ := range listeners {
-				*d.eventsChan <- &types.DatabaseEvent{
+				*d.eventsChan <- &flash.DatabaseEvent{
 					ListenerUid: listenerUid,
-					Event:       &types.TruncateEvent{},
+					Event:       &flash.TruncateEvent{},
 				}
 			}
 		}
@@ -247,7 +247,7 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 	return false, nil
 }
 
-func (d *Driver) parseTuple(relationID uint32, tuple *pglogrepl.TupleData) (*types.EventData, error) {
+func (d *Driver) parseTuple(relationID uint32, tuple *pglogrepl.TupleData) (*flash.EventData, error) {
 	rel, ok := d.replicationState.relations[relationID]
 	if !ok {
 		return nil, fmt.Errorf("unknown relation ID %d", relationID)
@@ -255,7 +255,7 @@ func (d *Driver) parseTuple(relationID uint32, tuple *pglogrepl.TupleData) (*typ
 	if len(tuple.Columns) == 0 {
 		return nil, nil
 	}
-	values := types.EventData{} //Initialize as nil and create only on first col
+	values := flash.EventData{} //Initialize as nil and create only on first col
 	for idx, col := range tuple.Columns {
 		colName := rel.Columns[idx].Name
 		switch col.DataType {
@@ -274,8 +274,8 @@ func (d *Driver) parseTuple(relationID uint32, tuple *pglogrepl.TupleData) (*typ
 	return &values, nil
 }
 
-func (d *Driver) ExtractFields(data *types.EventData, fields []string) *types.EventData {
-	reducedData := types.EventData{}
+func (d *Driver) ExtractFields(data *flash.EventData, fields []string) *flash.EventData {
+	reducedData := flash.EventData{}
 	for _, field := range fields {
 		reducedData[field] = (*data)[field]
 	}
@@ -300,7 +300,7 @@ func (d *Driver) decodeTextColumnData(data []byte, dataType uint32) (interface{}
 	return string(data), nil
 }
 
-func (d *Driver) checkConditions(data *types.EventData, conditions []*types.ListenerCondition) bool {
+func (d *Driver) checkConditions(data *flash.EventData, conditions []*flash.ListenerCondition) bool {
 	for _, condition := range conditions {
 		value := (*data)[condition.Column]
 		if value != condition.Value {

@@ -2,10 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/quix-labs/flash/pkg/client"
-	"github.com/quix-labs/flash/pkg/drivers/trigger"
-	"github.com/quix-labs/flash/pkg/listeners"
-	"github.com/quix-labs/flash/pkg/types"
+	"github.com/quix-labs/flash"
+	"github.com/quix-labs/flash/drivers/trigger"
 	"github.com/rs/zerolog"
 	"os"
 	"os/signal"
@@ -21,39 +19,39 @@ func main() {
 	//pprof.StartCPUProfile(f)
 	//defer pprof.StopCPUProfile()
 
-	postsListenerConfig := &types.ListenerConfig{
+	postsListenerConfig := &flash.ListenerConfig{
 		Table:              "public.posts",
 		MaxParallelProcess: 1, // In most case 1 is ideal because sync between goroutine introduce some delay
 		Fields:             []string{"id", "slug"},
-		Conditions:         []*types.ListenerCondition{{Column: "active", Value: true}},
+		//Conditions:         []*flash.ListenerCondition{{Column: "active", Value: true}},
 	}
-	postsListener, _ := listeners.NewListener(postsListenerConfig)
+	postsListener, _ := flash.NewListener(postsListenerConfig)
 
-	postsListener2Config := &types.ListenerConfig{
+	postsListener2Config := &flash.ListenerConfig{
 		Table:              "public.posts",
 		MaxParallelProcess: 1, // In most case 1 is ideal because sync between goroutine introduce some delay
 		Fields:             []string{"active"},
-		Conditions:         []*types.ListenerCondition{{Column: "slug", Value: nil}},
+		Conditions:         []*flash.ListenerCondition{{Column: "slug", Value: nil}},
 	}
-	postsListener2, _ := listeners.NewListener(postsListener2Config)
+	postsListener2, _ := flash.NewListener(postsListener2Config)
 
 	// Registering your callbacks
 	var i = 0
 	var mutex sync.Mutex
 
-	stopAll, err := postsListener.On(types.OperationAll, func(event types.Event) {
+	stopAll, err := postsListener.On(flash.OperationAll, func(event flash.Event) {
 		mutex.Lock()
 		i++
 		mutex.Unlock()
 
 		switch typedEvent := event.(type) {
-		case *types.InsertEvent:
+		case *flash.InsertEvent:
 			fmt.Printf("insert - new: %+v\n", typedEvent.New)
-		case *types.UpdateEvent:
+		case *flash.UpdateEvent:
 			fmt.Printf("update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
-		case *types.DeleteEvent:
+		case *flash.DeleteEvent:
 			fmt.Printf("delete - old: %+v \n", typedEvent.Old)
-		case *types.TruncateEvent:
+		case *flash.TruncateEvent:
 			fmt.Printf("truncate \n")
 		}
 	})
@@ -68,19 +66,19 @@ func main() {
 		}
 	}()
 
-	stopAll2, err := postsListener2.On(types.OperationAll, func(event types.Event) {
+	stopAll2, err := postsListener2.On(flash.OperationAll, func(event flash.Event) {
 		mutex.Lock()
 		i++
 		mutex.Unlock()
 
 		switch typedEvent := event.(type) {
-		case *types.InsertEvent:
+		case *flash.InsertEvent:
 			fmt.Printf("2-insert - new: %+v\n", typedEvent.New)
-		case *types.UpdateEvent:
+		case *flash.UpdateEvent:
 			fmt.Printf("2-update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
-		case *types.DeleteEvent:
+		case *flash.DeleteEvent:
 			fmt.Printf("2-delete - old: %+v \n", typedEvent.Old)
-		case *types.TruncateEvent:
+		case *flash.TruncateEvent:
 			fmt.Printf("2-truncate \n")
 		}
 	})
@@ -113,15 +111,14 @@ func main() {
 	})
 
 	// Create client
-	clientConfig := &types.ClientConfig{
+	clientConfig := &flash.ClientConfig{
 		DatabaseCnx:     "postgresql://devuser:devpass@localhost:5432/devdb",
 		Logger:          &logger, // Define your custom zerolog.Logger here
 		ShutdownTimeout: time.Second * 2,
 		Driver:          driver,
 	}
-	flashClient, _ := client.NewClient(clientConfig)
-	flashClient.Attach(postsListener)
-	flashClient.Attach(postsListener2)
+	flashClient, _ := flash.NewClient(clientConfig)
+	flashClient.Attach(postsListener, postsListener2)
 
 	// Start listening
 	go func() {

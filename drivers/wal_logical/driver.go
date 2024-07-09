@@ -2,7 +2,7 @@ package wal_logical
 
 import (
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/quix-labs/flash/pkg/types"
+	"github.com/quix-labs/flash"
 )
 
 type DriverConfig struct {
@@ -12,7 +12,7 @@ type DriverConfig struct {
 }
 
 var (
-	_ types.Driver = (*Driver)(nil) // Interface implementation
+	_ flash.Driver = (*Driver)(nil) // Interface implementation
 )
 
 func NewDriver(config *DriverConfig) *Driver {
@@ -27,16 +27,16 @@ func NewDriver(config *DriverConfig) *Driver {
 	}
 	return &Driver{
 		Config:          config,
-		activeListeners: make(map[string]map[string]*types.ListenerConfig),
+		activeListeners: make(map[string]map[string]*flash.ListenerConfig),
 	}
 }
 
 // TODO
 type PublicationState map[string]*struct {
-	listenedEvents  []types.Operation
-	listenerMapping map[types.Operation]struct {
+	listenedEvents  []flash.Operation
+	listenerMapping map[flash.Operation]struct {
 		_listenerUid *string
-		_config      *types.ListenerConfig
+		_config      *flash.ListenerConfig
 	}
 }
 
@@ -50,15 +50,15 @@ type Driver struct {
 	replicationState *replicationState
 
 	activePublications map[string]bool
-	activeListeners    map[string]map[string]*types.ListenerConfig // key 1: tableName -> key 2: listenerUid
-	eventsChan         *types.DatabaseEventsChan
+	activeListeners    map[string]map[string]*flash.ListenerConfig // key 1: tableName -> key 2: listenerUid
+	eventsChan         *flash.DatabaseEventsChan
 
 	subscriptionState *subscriptionState
 
-	_clientConfig *types.ClientConfig
+	_clientConfig *flash.ClientConfig
 }
 
-func (d *Driver) Init(clientConfig *types.ClientConfig) error {
+func (d *Driver) Init(clientConfig *flash.ClientConfig) error {
 	d._clientConfig = clientConfig
 
 	if err := d.initQuerying(); err != nil {
@@ -72,12 +72,12 @@ func (d *Driver) Init(clientConfig *types.ClientConfig) error {
 	return nil
 }
 
-func (d *Driver) HandleEventListenStart(listenerUid string, listenerConfig *types.ListenerConfig, event *types.Operation) error {
+func (d *Driver) HandleEventListenStart(listenerUid string, listenerConfig *flash.ListenerConfig, event *flash.Operation) error {
 	tableName := d.sanitizeTableName(listenerConfig.Table, false)
 
 	//TODO ALTER PUBLICATION noinsert SET (publish = 'update, delete');
 	if _, exists := d.activeListeners[tableName]; !exists {
-		d.activeListeners[tableName] = make(map[string]*types.ListenerConfig)
+		d.activeListeners[tableName] = make(map[string]*flash.ListenerConfig)
 	}
 
 	// Keep in goroutine because channel is listened on start
@@ -93,7 +93,7 @@ func (d *Driver) HandleEventListenStart(listenerUid string, listenerConfig *type
 	return nil
 }
 
-func (d *Driver) HandleEventListenStop(listenerUid string, listenerConfig *types.ListenerConfig, event *types.Operation) error {
+func (d *Driver) HandleEventListenStop(listenerUid string, listenerConfig *flash.ListenerConfig, event *flash.Operation) error {
 	tableName := d.sanitizeTableName(listenerConfig.Table, false)
 
 	// Keep in goroutine because channel is listened on start
@@ -109,7 +109,7 @@ func (d *Driver) HandleEventListenStop(listenerUid string, listenerConfig *types
 	return nil
 }
 
-func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
+func (d *Driver) Listen(eventsChan *flash.DatabaseEventsChan) error {
 	d.eventsChan = eventsChan
 
 	var errChan = make(chan error)

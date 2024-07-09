@@ -1,12 +1,9 @@
-package client
+package flash
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/quix-labs/flash/pkg/drivers/trigger"
-	"github.com/quix-labs/flash/pkg/listeners"
-	"github.com/quix-labs/flash/pkg/types"
 	"github.com/rs/zerolog"
 	"os"
 	"strings"
@@ -14,15 +11,28 @@ import (
 	"time"
 )
 
-func NewClient(config *types.ClientConfig) (*Client, error) {
+type ClientConfig struct {
+	DatabaseCnx string
+	Driver      Driver
+	Logger      *zerolog.Logger
+
+	ShutdownTimeout time.Duration
+}
+
+type Client struct {
+	Config    *ClientConfig
+	listeners map[string]*Listener
+}
+
+func NewClient(config *ClientConfig) (*Client, error) {
 	if config == nil {
-		config = &types.ClientConfig{}
+		return nil, errors.New("config required")
 	}
 	if config.DatabaseCnx == "" {
 		return nil, errors.New("database connection required")
 	}
 	if config.Driver == nil {
-		config.Driver = trigger.NewDriver(nil)
+		return nil, errors.New("driver required")
 	}
 	if config.Logger == nil {
 		logger := zerolog.New(os.Stdout).Level(zerolog.DebugLevel).With().Stack().Timestamp().Logger()
@@ -33,18 +43,15 @@ func NewClient(config *types.ClientConfig) (*Client, error) {
 	}
 	return &Client{
 		Config:    config,
-		listeners: make(map[string]*listeners.Listener),
+		listeners: make(map[string]*Listener),
 	}, nil
 }
 
-type Client struct {
-	Config    *types.ClientConfig
-	listeners map[string]*listeners.Listener
-}
-
-func (c *Client) Attach(l *listeners.Listener) {
-	listenerUid := c.getUniqueNameForListener(l)
-	c.listeners[listenerUid] = l
+func (c *Client) Attach(listeners ...*Listener) {
+	for _, l := range listeners {
+		listenerUid := c.getUniqueNameForListener(l)
+		c.listeners[listenerUid] = l
+	}
 }
 
 func (c *Client) Init() error {
@@ -65,9 +72,9 @@ func (c *Client) Init() error {
 		errChan := make(chan error)
 		go func() {
 			defer wg.Done()
-			err := listener.Init(func(event types.Operation) error {
+			err := listener.Init(func(event Operation) error {
 				return c.Config.Driver.HandleEventListenStart(listenerUid, listener.Config, &event)
-			}, func(event types.Operation) error {
+			}, func(event Operation) error {
 				return c.Config.Driver.HandleEventListenStop(listenerUid, listener.Config, &event)
 			})
 			errChan <- err
@@ -89,7 +96,7 @@ func (c *Client) Start() error {
 		return err
 	}
 
-	eventChan := make(types.DatabaseEventsChan)
+	eventChan := make(DatabaseEventsChan)
 	errChan := make(chan error)
 	go func() {
 		if err := c.Config.Driver.Listen(&eventChan); err != nil {
@@ -148,6 +155,6 @@ func (c *Client) Close() error {
 	return nil
 }
 
-func (c *Client) getUniqueNameForListener(lc *listeners.Listener) string {
+func (c *Client) getUniqueNameForListener(lc *Listener) string {
 	return strings.ReplaceAll(fmt.Sprintf("%p", lc), "0x", "")
 }

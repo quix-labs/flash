@@ -1,4 +1,4 @@
-package types
+package flash
 
 type Driver interface {
 	Init(clientConfig *ClientConfig) error

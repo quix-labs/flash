@@ -1,12 +1,44 @@
-package listeners
+package flash
 
 import (
 	"errors"
-	"github.com/quix-labs/flash/pkg/types"
 	"sync"
 )
 
-func NewListener(config *types.ListenerConfig) (*Listener, error) {
+// TODO SORTIR VERIFICATION AU NIVEAU LISTENER, PBM oblige à envoyer les columns dans l'event
+type ListenerCondition struct {
+	Column string
+	//Operator string //TODO actually only equals are implemented
+	Value any
+}
+
+type ListenerConfig struct {
+	Table              string   // Can be prefixed by schema - e.g: public.posts
+	Fields             []string // Empty fields means all ( SELECT * )
+	MaxParallelProcess int      // Default to 1 (not parallel) -> use -1 for Infinity
+
+	Conditions []*ListenerCondition
+}
+
+type CreateEventCallback func(event Operation) error
+type DeleteEventCallback func(event Operation) error
+
+type Listener struct {
+	Config *ListenerConfig
+
+	// Internals
+	sync.Mutex
+	callbacks      map[*EventCallback]Operation
+	listenedEvents Operation // Use bitwise comparison to check for listened events
+	semaphore      chan struct{}
+
+	// Trigger client
+	_clientCreateEventCallback CreateEventCallback
+	_clientDeleteEventCallback DeleteEventCallback
+	_clientInitialized         bool
+}
+
+func NewListener(config *ListenerConfig) (*Listener, error) {
 	if config == nil {
 		return nil, errors.New("config cannot be nil")
 	}
@@ -21,44 +53,27 @@ func NewListener(config *types.ListenerConfig) (*Listener, error) {
 
 	return &Listener{
 		Config:    config,
-		callbacks: make(map[*types.EventCallback]types.Operation),
+		callbacks: make(map[*EventCallback]Operation),
 		semaphore: semaphore,
 	}, nil
 }
 
-type CreateEventCallback func(event types.Operation) error
-type DeleteEventCallback func(event types.Operation) error
-type Listener struct {
-	Config *types.ListenerConfig
-
-	// Internals
-	sync.Mutex
-	callbacks      map[*types.EventCallback]types.Operation
-	listenedEvents types.Operation // Use bitwise comparison to check for listened events
-	semaphore      chan struct{}
-
-	// Trigger client
-	_clientCreateEventCallback CreateEventCallback
-	_clientDeleteEventCallback DeleteEventCallback
-	_clientInitialized         bool
-}
-
 /* Callback management */
 
-func (l *Listener) On(event types.Operation, callback types.EventCallback) (func() error, error) {
+func (l *Listener) On(operation Operation, callback EventCallback) (func() error, error) {
 	if callback == nil {
 		return nil, errors.New("callback cannot be nil")
 	}
 
-	if err := l.addListenedEventIfNeeded(event); err != nil {
+	if err := l.addListenedEventIfNeeded(operation); err != nil {
 		return nil, err
 	}
 
-	l.callbacks[&callback] = event
+	l.callbacks[&callback] = operation
 
 	removeFunc := func() error {
 		delete(l.callbacks, &callback) // Important keep before removeListenedEventIfNeeded
-		if err := l.removeListenedEventIfNeeded(event); err != nil {
+		if err := l.removeListenedEventIfNeeded(operation); err != nil {
 			return err
 		}
 		callback = nil
@@ -68,7 +83,7 @@ func (l *Listener) On(event types.Operation, callback types.EventCallback) (func
 	return removeFunc, nil
 }
 
-func (l *Listener) Dispatch(event *types.Event) {
+func (l *Listener) Dispatch(event *Event) {
 	for callback, listens := range l.callbacks {
 		if listens&(*event).GetOperation() > 0 {
 			if l.Config.MaxParallelProcess == -1 {
@@ -102,7 +117,7 @@ func (l *Listener) Init(_createCallback CreateEventCallback, _deleteCallback Del
 	l._clientDeleteEventCallback = _deleteCallback
 
 	// Emit all events for initialization
-	for targetEvent := types.Operation(1); targetEvent != 0 && targetEvent <= types.OperationAll; targetEvent <<= 1 {
+	for targetEvent := Operation(1); targetEvent != 0 && targetEvent <= OperationAll; targetEvent <<= 1 {
 		if l.listenedEvents&targetEvent == 0 {
 			continue
 		}
@@ -115,7 +130,7 @@ func (l *Listener) Init(_createCallback CreateEventCallback, _deleteCallback Del
 	return nil
 }
 
-func (l *Listener) addListenedEventIfNeeded(event types.Operation) error {
+func (l *Listener) addListenedEventIfNeeded(event Operation) error {
 
 	initialEvents := l.listenedEvents
 	l.listenedEvents |= event
@@ -126,7 +141,7 @@ func (l *Listener) addListenedEventIfNeeded(event types.Operation) error {
 		return nil
 	}
 
-	for targetEvent := types.Operation(1); targetEvent != 0 && targetEvent <= types.OperationAll; targetEvent <<= 1 {
+	for targetEvent := Operation(1); targetEvent != 0 && targetEvent <= OperationAll; targetEvent <<= 1 {
 		if targetEvent&diff == 0 || targetEvent&event == 0 {
 			continue
 		}
@@ -142,9 +157,9 @@ func (l *Listener) addListenedEventIfNeeded(event types.Operation) error {
 	return nil
 }
 
-func (l *Listener) removeListenedEventIfNeeded(event types.Operation) error {
+func (l *Listener) removeListenedEventIfNeeded(event Operation) error {
 
-	for targetEvent := types.Operation(1); targetEvent != 0 && targetEvent <= event; targetEvent <<= 1 {
+	for targetEvent := Operation(1); targetEvent != 0 && targetEvent <= event; targetEvent <<= 1 {
 		if targetEvent&l.listenedEvents == 0 {
 			continue
 		}
@@ -170,7 +185,7 @@ func (l *Listener) Close() error {
 	l._clientInitialized = false
 	return nil
 }
-func (l *Listener) hasListenersForEvent(event types.Operation) bool {
+func (l *Listener) hasListenersForEvent(event Operation) bool {
 	for _, listens := range l.callbacks {
 		if listens&event > 0 {
 			return true

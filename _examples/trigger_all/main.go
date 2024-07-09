@@ -2,25 +2,23 @@ package main
 
 import (
 	"fmt"
-	"github.com/quix-labs/flash/pkg/client"
-	"github.com/quix-labs/flash/pkg/listeners"
-	"github.com/quix-labs/flash/pkg/types"
+	"github.com/quix-labs/flash"
+	"github.com/quix-labs/flash/drivers/trigger"
 )
 
 func main() {
-	postsListenerConfig := &types.ListenerConfig{Table: "public.posts"}
-	postsListener, _ := listeners.NewListener(postsListenerConfig)
+	postsListener, _ := flash.NewListener(&flash.ListenerConfig{Table: "public.posts"})
 
 	// Registering your callbacks -> Can be simplified with types.EventAll
-	stop, err := postsListener.On(types.OperationTruncate|types.OperationInsert|types.OperationUpdate|types.OperationDelete, func(event types.Event) {
+	stop, err := postsListener.On(flash.OperationTruncate|flash.OperationInsert|flash.OperationUpdate|flash.OperationDelete, func(event flash.Event) {
 		switch typedEvent := event.(type) {
-		case *types.InsertEvent:
+		case *flash.InsertEvent:
 			fmt.Printf("insert - new: %+v\n", typedEvent.New)
-		case *types.UpdateEvent:
+		case *flash.UpdateEvent:
 			fmt.Printf("update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
-		case *types.DeleteEvent:
+		case *flash.DeleteEvent:
 			fmt.Printf("delete - old: %+v \n", typedEvent.Old)
-		case *types.TruncateEvent:
+		case *flash.TruncateEvent:
 			fmt.Printf("truncate \n")
 		}
 	})
@@ -29,8 +27,10 @@ func main() {
 	}
 	defer stop()
 
-	clientConfig := &types.ClientConfig{DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb"}
-	flashClient, _ := client.NewClient(clientConfig)
+	flashClient, _ := flash.NewClient(&flash.ClientConfig{
+		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
+		Driver:      trigger.NewDriver(&trigger.DriverConfig{}),
+	})
 	flashClient.Attach(postsListener)
 	go flashClient.Start() // Error Handling
 	defer flashClient.Close()

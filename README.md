@@ -55,34 +55,34 @@ package main
 
 import (
 	"fmt"
-	"github.com/quix-labs/flash/pkg/listeners"
+	"github.com/quix-labs/flash"
+	"github.com/quix-labs/flash/drivers/trigger"
 	"os"
 	"os/signal"
-
-	"github.com/quix-labs/flash/pkg/client"
-	"github.com/quix-labs/flash/pkg/types"
 )
 
 func main() {
 	// Example with listener and client setup
-	postsListenerConfig := &types.ListenerConfig{Table: "public.posts"}
-	postsListener := listeners.NewListener(postsListenerConfig)
-	postsListener.On(types.OperationAll, func(event types.Event) {
+	postsListener, _ := flash.NewListener(&flash.ListenerConfig{Table: "public.posts"})
+
+	postsListener.On(flash.OperationAll, func(event flash.Event) {
 		switch typedEvent := event.(type) {
-		case *types.InsertEvent:
+		case *flash.InsertEvent:
 			fmt.Printf("insert - new: %+v\n", typedEvent.New)
-		case *types.UpdateEvent:
+		case *flash.UpdateEvent:
 			fmt.Printf("update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
-		case *types.DeleteEvent:
+		case *flash.DeleteEvent:
 			fmt.Printf("delete - old: %+v \n", typedEvent.Old)
-		case *types.TruncateEvent:
+		case *flash.TruncateEvent:
 			fmt.Printf("truncate \n")
 		}
 	})
 
 	// Create client
-	clientConfig := &types.ClientConfig{DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb"}
-	flashClient, _ := client.NewClient(clientConfig)
+	flashClient, _ := flash.NewClient(&flash.ClientConfig{
+		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
+		Driver:      trigger.NewDriver(&trigger.DriverConfig{}),
+	})
 	flashClient.Attach(postsListener)
 
 	// Start listening
@@ -96,15 +96,16 @@ func main() {
 
 	fmt.Println("Program terminated.")
 }
+
 ```
 
 For more detailed examples, check out the following files:
 
-- [Debug queries](examples/debug_trace/debug_trace.go)
-- [Trigger insert events on table](examples/trigger_insert/trigger_insert.go)
-- [Trigger all events on table](examples/trigger_all/trigger_all.go)
-- [Listen for specific fields](examples/specific_fields/specific_fields.go)
-- [Parallel Callback](examples/parallel_callback/parallel_callback.go)
+- [Debug queries](_examples/debug_trace/main.go)
+- [Trigger insert events on table](_examples/trigger_insert/main.go)
+- [Trigger all events on table](_examples/trigger_all/main.go)
+- [Listen for specific fields](_examples/specific_fields/main.go)
+- [Parallel Callback](_examples/parallel_callback/main.go)
 
 ## Advanced Features
 
@@ -116,7 +117,7 @@ events:
 - A delete event with the old value of this column (and other fields).
 - An insert event with the new value of this column (and other fields).
 
-### 2. Custom Conditions ⏳
+### 2. Custom Conditions ✅
 
 You can configure conditions, and if a database row does not match the criteria, you will not receive any event.
 
@@ -140,7 +141,18 @@ Check [drivers/README.md](pkg/drivers/README.md) to see if the driver you have c
 
 The following features are planned for future implementation:
 
-- ⏳ Soft-delete support: receive delete events when SQL condition is respected. Example: `deleted_at IS NOT NULL`.
+- ⏳ Support for conditional listens.
+
+| Operator |      trigger      |    wal_logical    |
+|:--------:|:-----------------:|:-----------------:|
+|  equals  |         ✅         |         ✅         |
+|   neq    |         ❌         |         ❌         |
+|    lt    |         ❌         |         ❌         |
+|   lte    |         ❌         |         ❌         |
+|   gte    |         ❌         |         ❌         |
+| not null |         ❌         |         ❌         |
+| is null  | ⚠️ using eq + nil | ⚠️ using eq + nil |
+
 - ⏳ Handling custom primary for fake insert/delete when change appears
 - ⬜ Remove client in favor of direct listener start
 - ⬜ Support attaching/detaching new listener during runtime.

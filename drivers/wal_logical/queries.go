@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/quix-labs/flash/pkg/types"
+	"github.com/quix-labs/flash"
 	"strings"
 )
 
@@ -13,7 +13,7 @@ func (d *Driver) getFullSlotName(slotName string) string {
 	return d.Config.PublicationSlotPrefix + "-" + slotName
 }
 
-func (d *Driver) getCreatePublicationSlotSql(fullSlotName string, config *types.ListenerConfig, event *types.Operation) (string, error) {
+func (d *Driver) getCreatePublicationSlotSql(fullSlotName string, config *flash.ListenerConfig, event *flash.Operation) (string, error) {
 	if config == nil {
 		return fmt.Sprintf(`CREATE PUBLICATION "%s";`, fullSlotName), nil
 	}
@@ -38,7 +38,7 @@ func (d *Driver) getAlterPublicationEventsSql(publication *activePublication) (s
 	}
 
 	var events []string
-	for targetEvent := types.Operation(1); targetEvent != 0 && targetEvent <= types.OperationAll; targetEvent <<= 1 {
+	for targetEvent := flash.Operation(1); targetEvent != 0 && targetEvent <= flash.OperationAll; targetEvent <<= 1 {
 		if (*publication.events)&targetEvent == 0 {
 			continue
 		}
@@ -55,16 +55,16 @@ func (d *Driver) getAlterPublicationEventsSql(publication *activePublication) (s
 func (d *Driver) getDropPublicationSlotSql(fullSlotName string) string {
 	return fmt.Sprintf(`DROP PUBLICATION IF EXISTS "%s";`, fullSlotName)
 }
-func (d *Driver) getOperationNameForEvent(e *types.Operation) (string, error) {
+func (d *Driver) getOperationNameForEvent(e *flash.Operation) (string, error) {
 	operation := ""
 	switch *e {
-	case types.OperationInsert:
+	case flash.OperationInsert:
 		operation = "insert"
-	case types.OperationUpdate:
+	case flash.OperationUpdate:
 		operation = "update"
-	case types.OperationDelete:
+	case flash.OperationDelete:
 		operation = "delete"
-	case types.OperationTruncate:
+	case flash.OperationTruncate:
 		operation = "truncate"
 	default:
 		return "", errors.New("could not determine event type")

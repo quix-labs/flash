@@ -2,32 +2,33 @@ package main
 
 import (
 	"fmt"
-	"github.com/quix-labs/flash/pkg/client"
-	"github.com/quix-labs/flash/pkg/listeners"
-	"github.com/quix-labs/flash/pkg/types"
+	"github.com/quix-labs/flash"
+	"github.com/quix-labs/flash/drivers/trigger"
 )
 
 func main() {
-	postsListener, _ := listeners.NewListener(&types.ListenerConfig{
+	postsListener, _ := flash.NewListener(&flash.ListenerConfig{
 		Table:  "public.posts",
 		Fields: []string{"id", "slug"},
 	})
-	postsListener.On(types.OperationAll, func(event types.Event) {
+	postsListener.On(flash.OperationAll, func(event flash.Event) {
 		switch typedEvent := event.(type) {
-		case *types.InsertEvent:
+		case *flash.InsertEvent:
 			fmt.Printf("insert - new: %+v\n", typedEvent.New)
-		case *types.UpdateEvent:
+		case *flash.UpdateEvent:
 			fmt.Printf("update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
-		case *types.DeleteEvent:
+		case *flash.DeleteEvent:
 			fmt.Printf("delete - old: %+v \n", typedEvent.Old)
-		case *types.TruncateEvent:
+		case *flash.TruncateEvent:
 			fmt.Printf("truncate \n")
 		}
 	})
 
 	// Create client
-	clientConfig := &types.ClientConfig{DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb"}
-	flashClient, _ := client.NewClient(clientConfig)
+	flashClient, _ := flash.NewClient(&flash.ClientConfig{
+		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
+		Driver:      trigger.NewDriver(&trigger.DriverConfig{}),
+	})
 	flashClient.Attach(postsListener)
 
 	go func() {

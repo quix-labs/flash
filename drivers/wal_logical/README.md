@@ -19,20 +19,22 @@ Initialize this driver and pass it to the `clientConfig` Driver parameter.
 
 ```go
 package main
+
 import (
-    "github.com/quix-labs/flash/pkg/drivers/wal_logical"
-    "github.com/quix-labs/flash/pkg/types"
+	"github.com/quix-labs/flash"
+	"github.com/quix-labs/flash/drivers/wal_logical"
 )
 
 func main() {
 	// ... BOOTSTRAPPING
 	driver := wal_logical.NewDriver(&wal_logical.DriverConfig{})
-	clientConfig := &types.ClientConfig{
+	clientConfig := &flash.ClientConfig{
 		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
 		Driver:      driver,
 	}
 	// ...START
 }
+
 ```
 ## Configuration
 

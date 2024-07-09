@@ -2,20 +2,20 @@ package main
 
 import (
 	"fmt"
-	"github.com/quix-labs/flash/pkg/client"
-	"github.com/quix-labs/flash/pkg/listeners"
-	"github.com/quix-labs/flash/pkg/types"
+	"github.com/quix-labs/flash"
+	"github.com/quix-labs/flash/drivers/trigger"
 	"github.com/rs/zerolog"
 	"os"
 )
 
 func main() {
-	postsListenerConfig := &types.ListenerConfig{Table: "public.posts"}
-	postsListener, _ := listeners.NewListener(postsListenerConfig)
+
+	postsListenerConfig := &flash.ListenerConfig{Table: "public.posts"}
+	postsListener, _ := flash.NewListener(postsListenerConfig)
 
 	// Registering your callbacks
-	stop, err := postsListener.On(types.OperationInsert, func(event types.Event) {
-		typedEvent := event.(*types.InsertEvent)
+	stop, err := postsListener.On(flash.OperationInsert, func(event flash.Event) {
+		typedEvent := event.(*flash.InsertEvent)
 		fmt.Printf("Insert received - new: %+v\n", typedEvent.New)
 	})
 	if err != nil {
@@ -25,13 +25,18 @@ func main() {
 
 	// Create custom logger with Level Trace <-> Default is Debug
 	logger := zerolog.New(os.Stdout).Level(zerolog.TraceLevel).With().Stack().Timestamp().Logger()
-
+	driver := trigger.NewDriver(&trigger.DriverConfig{})
 	// Create client
-	clientConfig := &types.ClientConfig{
+	clientConfig := &flash.ClientConfig{
 		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
 		Logger:      &logger, // Define your custom zerolog.Logger here
+		Driver:      driver,
 	}
-	flashClient, _ := client.NewClient(clientConfig)
+
+	flashClient, err := flash.NewClient(clientConfig)
+	if err != nil {
+		fmt.Println(err)
+	}
 	flashClient.Attach(postsListener)
 
 	// Start listening

@@ -3,19 +3,19 @@ package wal_logical
 import (
 	"context"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/quix-labs/flash/pkg/types"
+	"github.com/quix-labs/flash"
 )
 
 type subscriptionClaim struct {
 	listenerUid    string
-	listenerConfig *types.ListenerConfig
-	event          *types.Operation
+	listenerConfig *flash.ListenerConfig
+	event          *flash.Operation
 }
 
 type activePublication struct {
-	listenerConfig *types.ListenerConfig
+	listenerConfig *flash.ListenerConfig
 	slotName       string
-	events         *types.Operation // Use with bitwise to handle combined events
+	events         *flash.Operation // Use with bitwise to handle combined events
 }
 
 // Key -> listenerUid
