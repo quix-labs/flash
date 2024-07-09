@@ -1,25 +1,64 @@
 # Trigger Driver (trigger)
 
-### Bootstrapping
+## Description
 
-- Generation of a unique name:
-    - Unique reference + action (insert, update, delete, truncate)
+For each event that is listened to, this driver dynamically creates a trigger that uses `pg_notify` to notify the application.
 
-- Creation:
-    - Create a trigger function -> pg_notify(unique_name)
-    - Create a trigger FOR EACH ROW that calls the previous trigger function
+This approach can introduce latencies in the database due to the overhead of creating and managing triggers on-the-fly.
 
-- Deletion:
-    - Delete the trigger function dedicated to the action (using the unique name as reference) CASCADE
-    - As it cascades, the trigger will also be deleted
+## Prerequisites
 
-### Event Reception
+### Database Setup
 
-- Each event is identifiable by a unique name that it emits in pg_notify.
-    - Since we only have triggers for the requested data, we forward the event to the callback in all cases
+- No configuration needed, triggers are natively supported in PostgreSQL.
+
+## How to Use
+
+Initialize this driver and pass it to the `clientConfig` Driver parameter.
+
+```go
+package main
+import (
+    "github.com/quix-labs/flash/pkg/drivers/trigger"
+    "github.com/quix-labs/flash/pkg/types"
+)
+
+func main() {
+	// ... BOOTSTRAPPING
+	driver := trigger.NewDriver(&trigger.DriverConfig{})
+	clientConfig := &types.ClientConfig{
+		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
+		Driver:      driver,
+	}
+	// ...START
+}
+```
+## Configuration
+
+### Schema
+
+- **Type**: `string`
+- **Default**: `flash`
+- **Description**: Must be unique across all your instances. This schema is used to sandbox all created resources.
+
+## Notes
+
+This driver creates a schema. If you have multiple instances without distinct `Schema` values, you may create conflicts between your applications.
+
+When running multiple clients in parallel, ensure each has unique values for these configurations to avoid conflicts.
 
 
-### WORKFLOW
+## Manually deletion
+
+If you encounter any artifacts, you can simply drop the PostgreSQL schema with your custom-defined schema or the default `flash`. Use `CASCADE` to ensure triggers are deleted.
+
+
+## Detailed Information
+
+### Advanced Features support
+
+See [drivers/README.MD](../README.md)  for the compatibility table.
+
+### Internal workflow
 
 You can find a workflow graph [here](./WORKFLOW.md).
-
