@@ -147,11 +147,12 @@ func (d *Driver) Listen(eventsChan *flash.DatabaseEventsChan) error {
 			}
 			var newData, oldData *flash.EventData = nil, nil
 			if data != nil {
-				if nd, exists := data["new"]; exists {
+				if nd, exists := data["new"]; exists && nd != nil {
 					typedData := flash.EventData(nd.(map[string]any))
 					newData = &typedData
 				}
-				if od, exists := data["old"]; exists {
+				if od, exists := data["old"]; exists && od != nil {
+					fmt.Println(od)
 					typedData := flash.EventData(od.(map[string]any))
 					oldData = &typedData
 				}
@@ -161,10 +162,10 @@ func (d *Driver) Listen(eventsChan *flash.DatabaseEventsChan) error {
 			if operation == flash.OperationUpdate {
 				var previouslyMatch, newlyMatch bool = true, true
 				/* Extract condition match */
-				if nc, exists := data["new_condition"]; exists {
+				if nc, exists := data["new_condition"]; exists && nc != nil {
 					newlyMatch = nc.(bool)
 				}
-				if oc, exists := data["old_condition"]; exists {
+				if oc, exists := data["old_condition"]; exists && oc != nil {
 					previouslyMatch = oc.(bool)
 				}
 
