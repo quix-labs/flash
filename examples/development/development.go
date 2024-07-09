@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/quix-labs/flash/pkg/client"
-	"github.com/quix-labs/flash/pkg/drivers/wal_logical"
+	"github.com/quix-labs/flash/pkg/drivers/trigger"
 	"github.com/quix-labs/flash/pkg/listeners"
 	"github.com/quix-labs/flash/pkg/types"
 	"github.com/rs/zerolog"
@@ -106,9 +106,9 @@ func main() {
 	//}()
 
 	// Create custom logger
-	logger := zerolog.New(os.Stdout).Level(zerolog.DebugLevel).With().Caller().Stack().Timestamp().Logger()
+	logger := zerolog.New(os.Stdout).Level(zerolog.TraceLevel).With().Caller().Stack().Timestamp().Logger()
 
-	driver := wal_logical.NewDriver(&wal_logical.DriverConfig{
+	driver := trigger.NewDriver(&trigger.DriverConfig{
 		//UseStreaming: true,
 	})
 

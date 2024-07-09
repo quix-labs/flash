@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/quix-labs/flash/pkg/types"
 	"strings"
+	"time"
 )
 
 func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.ListenerConfig, e *types.Operation) (string, string, error) {
@@ -40,12 +41,28 @@ func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.Listen
 		case "TRUNCATE":
 			rawFields = "null"
 		case "DELETE":
+
+			if len(l.Conditions) > 0 {
+				rawConditionSql, err = d.getConditionsSql(l.Conditions, "OLD")
+				if err != nil {
+					return "", "", err
+				}
+			}
+
 			jsonFields := make([]string, len(l.Fields))
 			for i, field := range l.Fields {
 				jsonFields[i] = fmt.Sprintf(`'%s', OLD."%s"`, field, field)
 			}
 			rawFields = fmt.Sprintf(`JSONB_BUILD_OBJECT('old',JSONB_BUILD_OBJECT(%s))::TEXT`, strings.Join(jsonFields, ","))
 		case "INSERT":
+
+			if len(l.Conditions) > 0 {
+				rawConditionSql, err = d.getConditionsSql(l.Conditions, "NEW")
+				if err != nil {
+					return "", "", err
+				}
+			}
+
 			jsonFields := make([]string, len(l.Fields))
 			for i, field := range l.Fields {
 				jsonFields[i] = fmt.Sprintf(`'%s', NEW."%s"`, field, field)
@@ -53,21 +70,43 @@ func (d *Driver) getCreateTriggerSqlForEvent(listenerUid string, l *types.Listen
 			rawFields = fmt.Sprintf(`JSONB_BUILD_OBJECT('new',JSONB_BUILD_OBJECT(%s))::TEXT`, strings.Join(jsonFields, ","))
 		case "UPDATE":
 			oldJsonFields := make([]string, len(l.Fields))
-			for i, field := range l.Fields {
-				oldJsonFields[i] = fmt.Sprintf(`'%s', OLD."%s"`, field, field) //TODO DISTINCTION OLD NEW
-			}
 			newJsonFields := make([]string, len(l.Fields))
 			for i, field := range l.Fields {
-				newJsonFields[i] = fmt.Sprintf(`'%s', NEW."%s"`, field, field) //TODO DISTINCTION OLD NEW
+				oldJsonFields[i] = fmt.Sprintf(`'%s', OLD."%s"`, field, field)
+				newJsonFields[i] = fmt.Sprintf(`'%s', NEW."%s"`, field, field)
 			}
-			rawFields = fmt.Sprintf(`JSONB_BUILD_OBJECT('old',JSONB_BUILD_OBJECT(%s),'new',JSONB_BUILD_OBJECT(%s))::TEXT`, strings.Join(oldJsonFields, ","), strings.Join(newJsonFields, ","))
 
-			// Add condition to trigger only if fields where updated
+			// Build raw conditions for field updates
 			rawConditions := make([]string, len(l.Fields))
 			for i, field := range l.Fields {
 				rawConditions[i] = fmt.Sprintf(`(OLD."%s" IS DISTINCT FROM NEW."%s")`, field, field)
 			}
 			rawConditionSql = strings.Join(rawConditions, " OR ")
+
+			// Build conditions for soft delete check
+			var oldConditionsSql, newConditionsSql string
+			if len(l.Conditions) > 0 {
+				oldConditionsSql, err = d.getConditionsSql(l.Conditions, "OLD")
+				if err != nil {
+					return "", "", err
+				}
+				newConditionsSql, err = d.getConditionsSql(l.Conditions, "NEW")
+				if err != nil {
+					return "", "", err
+				}
+
+				// Combine update conditions with soft delete conditions
+				rawConditionSql = fmt.Sprintf(`((%s)!=(%s)) OR (%s)`, oldConditionsSql, newConditionsSql, rawConditionSql)
+
+			}
+
+			rawFields = fmt.Sprintf(
+				`JSONB_BUILD_OBJECT('old',JSONB_BUILD_OBJECT(%s),'new',JSONB_BUILD_OBJECT(%s),'old_condition',%s,'new_condition',%s)::TEXT`,
+				strings.Join(oldJsonFields, ","),
+				strings.Join(newJsonFields, ","),
+				oldConditionsSql,
+				newConditionsSql,
+			)
 		}
 
 		if rawConditionSql == "" {
@@ -187,4 +226,37 @@ func (d *Driver) sanitizeTableName(tableName string) string {
 func (d *Driver) sqlExec(conn *sql.DB, query string) (sql.Result, error) {
 	d._clientConfig.Logger.Trace().Str("query", query).Msg("sending sql request")
 	return conn.Exec(query)
+}
+
+func (d *Driver) getConditionsSql(conditions []*types.ListenerCondition, table string) (string, error) {
+	rawConditions := make([]string, len(conditions))
+
+	for i, condition := range conditions {
+		operator := " IS "
+		valueRepr := ""
+		// TODO MULTI OPERATOR
+
+		switch condition.Value.(type) {
+		case nil:
+			valueRepr = "NULL"
+		case bool:
+			if condition.Value.(bool) == true {
+				valueRepr = "TRUE"
+			} else {
+				valueRepr = "FALSE"
+			}
+		case string, time.Time:
+			valueRepr = fmt.Sprintf(`'%s'`, condition.Value)
+		case float32, float64:
+			valueRepr = fmt.Sprintf(`%f`, condition.Value)
+		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+			valueRepr = fmt.Sprintf(`%d`, condition.Value)
+		default:
+			return "", errors.New("could not convert condition value to sql")
+		}
+
+		rawConditions[i] = fmt.Sprintf(`%s."%s"%s%s`, table, condition.Column, operator, valueRepr)
+
+	}
+	return strings.Join(rawConditions, " AND "), nil
 }

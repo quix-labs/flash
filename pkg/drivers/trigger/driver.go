@@ -137,9 +137,9 @@ func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
 				continue
 			}
 
-			var data map[string]types.EventData
+			var data map[string]any
 			if notification.Extra != "" {
-				data = make(map[string]types.EventData)
+				data = make(map[string]any)
 				if err := json.Unmarshal([]byte(notification.Extra), &data); err != nil {
 					errChan <- err
 					continue
@@ -148,11 +148,44 @@ func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
 			var newData, oldData *types.EventData = nil, nil
 			if data != nil {
 				if nd, exists := data["new"]; exists {
-					newData = &nd
+					typedData := types.EventData(nd.(map[string]any))
+					newData = &typedData
 				}
 				if od, exists := data["old"]; exists {
-					oldData = &od
+					typedData := types.EventData(od.(map[string]any))
+					oldData = &typedData
 				}
+			}
+
+			// Custom conditions if update to handle soft deletes
+			if operation == types.OperationUpdate {
+				var previouslyMatch, newlyMatch bool = true, true
+				/* Extract condition match */
+				if nc, exists := data["new_condition"]; exists {
+					newlyMatch = nc.(bool)
+				}
+				if oc, exists := data["old_condition"]; exists {
+					previouslyMatch = oc.(bool)
+				}
+
+				// Send insert signal
+				if !previouslyMatch && newlyMatch {
+					*eventsChan <- &types.DatabaseEvent{
+						ListenerUid: listenerUid,
+						Event:       &types.InsertEvent{New: newData},
+					}
+				} else if previouslyMatch && !newlyMatch {
+					*eventsChan <- &types.DatabaseEvent{
+						ListenerUid: listenerUid,
+						Event:       &types.DeleteEvent{Old: oldData},
+					}
+				} else if previouslyMatch && newlyMatch {
+					*eventsChan <- &types.DatabaseEvent{
+						ListenerUid: listenerUid,
+						Event:       &types.UpdateEvent{New: newData, Old: oldData},
+					}
+				}
+				continue
 			}
 
 			switch operation {
@@ -177,7 +210,7 @@ func (d *Driver) Listen(eventsChan *types.DatabaseEventsChan) error {
 					Event:       &types.TruncateEvent{},
 				}
 			default:
-				return fmt.Errorf("unknown operation: %s", operation)
+				return fmt.Errorf("unknown operation: %d", operation)
 			}
 		}
 	}
