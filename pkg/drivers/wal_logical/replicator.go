@@ -160,13 +160,13 @@ func (d *Driver) restartConn() error {
 	replicationOptions := pglogrepl.StartReplicationOptions{
 		Mode: pglogrepl.LogicalReplication,
 		PluginArgs: []string{
-			"proto_version '4'",
+			"proto_version '2'",
 			"publication_names '" + strings.Join(activePublications, ", ") + "'",
 			"messages 'true'",
 		},
 	}
 	if d.Config.UseStreaming {
-		replicationOptions.PluginArgs = append(replicationOptions.PluginArgs, "streaming 'true'") //TODO Check if parallel can be safely used
+		replicationOptions.PluginArgs = append(replicationOptions.PluginArgs, "streaming 'true'")
 	}
 
 	if err := pglogrepl.StartReplication(context.Background(), d.replicationConn, d.Config.ReplicationSlot, d.replicationState.lastWrittenLSN+1, replicationOptions); err != nil {
