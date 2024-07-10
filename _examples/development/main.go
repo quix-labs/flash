@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/quix-labs/flash"
-	"github.com/quix-labs/flash/drivers/trigger"
+	"github.com/quix-labs/flash/drivers/wal_logical"
 	"github.com/rs/zerolog"
 	"os"
 	"os/signal"
@@ -18,12 +18,13 @@ func main() {
 	//}
 	//pprof.StartCPUProfile(f)
 	//defer pprof.StopCPUProfile()
-
+	fmt.Println((flash.OperationTruncate).IncludeAll(flash.OperationDelete))
+	return
 	postsListenerConfig := &flash.ListenerConfig{
 		Table:              "public.posts",
 		MaxParallelProcess: 1, // In most case 1 is ideal because sync between goroutine introduce some delay
 		Fields:             []string{"id", "slug"},
-		//Conditions:         []*flash.ListenerCondition{{Column: "active", Value: true}},
+		Conditions:         []*flash.ListenerCondition{{Column: "active", Value: true}},
 	}
 	postsListener, _ := flash.NewListener(postsListenerConfig)
 
@@ -106,7 +107,7 @@ func main() {
 	// Create custom logger
 	logger := zerolog.New(os.Stdout).Level(zerolog.TraceLevel).With().Caller().Stack().Timestamp().Logger()
 
-	driver := trigger.NewDriver(&trigger.DriverConfig{
+	driver := wal_logical.NewDriver(&wal_logical.DriverConfig{
 		//UseStreaming: true,
 	})
 

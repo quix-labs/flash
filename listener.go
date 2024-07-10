@@ -22,15 +22,16 @@ type ListenerConfig struct {
 
 type CreateEventCallback func(event Operation) error
 type DeleteEventCallback func(event Operation) error
+type EventCallback func(event Event)
 
 type Listener struct {
 	Config *ListenerConfig
 
 	// Internals
 	sync.Mutex
-	callbacks      map[*EventCallback]Operation
-	listenedEvents Operation // Use bitwise comparison to check for listened events
-	semaphore      chan struct{}
+	callbacks          map[*EventCallback]Operation
+	listenedOperations Operation // Use bitwise comparison to check for listened events
+	semaphore          chan struct{}
 
 	// Trigger client
 	_clientCreateEventCallback CreateEventCallback
@@ -72,8 +73,8 @@ func (l *Listener) On(operation Operation, callback EventCallback) (func() error
 	l.callbacks[&callback] = operation
 
 	removeFunc := func() error {
-		delete(l.callbacks, &callback) // Important keep before removeListenedEventIfNeeded
-		if err := l.removeListenedEventIfNeeded(operation); err != nil {
+		delete(l.callbacks, &callback) // Important keep before removeListenedOperationIfNeeded
+		if err := l.removeListenedOperationIfNeeded(operation); err != nil {
 			return err
 		}
 		callback = nil
@@ -84,8 +85,8 @@ func (l *Listener) On(operation Operation, callback EventCallback) (func() error
 }
 
 func (l *Listener) Dispatch(event *Event) {
-	for callback, listens := range l.callbacks {
-		if listens&(*event).GetOperation() > 0 {
+	for callback, listenedOperations := range l.callbacks {
+		if listenedOperations.IncludeOne((*event).GetOperation()) {
 			if l.Config.MaxParallelProcess == -1 {
 				go (*callback)(*event)
 				continue
@@ -118,7 +119,7 @@ func (l *Listener) Init(_createCallback CreateEventCallback, _deleteCallback Del
 
 	// Emit all events for initialization
 	for targetEvent := Operation(1); targetEvent != 0 && targetEvent <= OperationAll; targetEvent <<= 1 {
-		if l.listenedEvents&targetEvent == 0 {
+		if l.listenedOperations&targetEvent == 0 {
 			continue
 		}
 		if err := _createCallback(targetEvent); err != nil {
@@ -132,11 +133,11 @@ func (l *Listener) Init(_createCallback CreateEventCallback, _deleteCallback Del
 
 func (l *Listener) addListenedEventIfNeeded(event Operation) error {
 
-	initialEvents := l.listenedEvents
-	l.listenedEvents |= event
+	initialEvents := l.listenedOperations
+	l.listenedOperations |= event
 
 	// Trigger event if change appears
-	diff := initialEvents ^ l.listenedEvents
+	diff := initialEvents ^ l.listenedOperations
 	if diff == 0 {
 		return nil
 	}
@@ -157,17 +158,17 @@ func (l *Listener) addListenedEventIfNeeded(event Operation) error {
 	return nil
 }
 
-func (l *Listener) removeListenedEventIfNeeded(event Operation) error {
+func (l *Listener) removeListenedOperationIfNeeded(event Operation) error {
 
 	for targetEvent := Operation(1); targetEvent != 0 && targetEvent <= event; targetEvent <<= 1 {
-		if targetEvent&l.listenedEvents == 0 {
+		if targetEvent&l.listenedOperations == 0 {
 			continue
 		}
 		if l.hasListenersForEvent(targetEvent) {
 			continue
 		}
 
-		l.listenedEvents &= ^targetEvent
+		l.listenedOperations &= ^targetEvent
 		if l._clientInitialized {
 			l.Lock()
 			if err := l._clientDeleteEventCallback(targetEvent); err != nil {
