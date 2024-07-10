@@ -25,3 +25,6 @@ Thumbs.db
 go.sum
 *.prof
 /development
+go.work
+go.work.sum
+coverage.*
