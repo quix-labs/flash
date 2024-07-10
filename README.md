@@ -121,7 +121,7 @@ events:
 - A delete event with the old value of this column (and other fields).
 - An insert event with the new value of this column (and other fields).
 
-### 2. Custom Conditions ✅
+### 2. Custom Conditions ⏳
 
 You can configure conditions, and if a database row does not match the criteria, you will not receive any event.
 
@@ -158,9 +158,9 @@ The following features are planned for future implementation:
 | is null  | ⚠️ using eq + nil | ⚠️ using eq + nil |
 
 - ⏳ Handling custom primary for fake insert/delete when change appears
+- ⏳ Tests implementation
 - ⬜ Remove client in favor of direct listener start
 - ⬜ Support attaching/detaching new listener during runtime.
-- ⬜ Tests implementation
 - ... any suggestions is welcome.
 
 ## Drivers
