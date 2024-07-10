@@ -139,7 +139,7 @@ receive any event.
 
 Some of these features may be incompatible with your driver.
 
-Check [drivers/README.md](pkg/drivers/README.md) to see if the driver you have chosen supports these features.
+Check [drivers/README.md](drivers/README.md) to see if the driver you have chosen supports these features.
 
 ## Planned Features
 
@@ -165,7 +165,7 @@ The following features are planned for future implementation:
 
 ## Drivers
 
-You can see all drivers details [here](pkg/drivers/README.md)
+You can see all drivers details [here](drivers/README.md)
 
 ## Upgrade from Old Structure
 

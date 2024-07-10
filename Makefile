@@ -1,7 +1,7 @@
 .PHONY: test test-coverage
 
 test:
-	go test ./...
+	go test ./... -v
 
 test-coverage:
 	go test -coverprofile=coverage.out ./...
