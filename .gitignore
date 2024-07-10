@@ -27,3 +27,4 @@ go.sum
 /development
 go.work
 go.work.sum
+coverage.*

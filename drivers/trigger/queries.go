@@ -15,7 +15,7 @@ func (d *Driver) getCreateTriggerSqlForOperation(listenerUid string, l *flash.Li
 		return "", "", err
 	}
 
-	operation, err := d.getOperationNameForEvent(e)
+	operation, err := e.StrictName()
 	if err != nil {
 		return "", "", err
 	}
@@ -156,41 +156,8 @@ func (d *Driver) getDeleteTriggerSqlForEvent(listenerUid string, l *flash.Listen
 	return fmt.Sprintf(`DROP FUNCTION IF EXISTS "%s"."%s" CASCADE;`, d.Config.Schema, triggerFnName), eventName, nil
 }
 
-func (d *Driver) getOperationNameForEvent(e *flash.Operation) (string, error) {
-	operation := ""
-	switch *e {
-	case flash.OperationInsert:
-		operation = "INSERT"
-	case flash.OperationUpdate:
-		operation = "UPDATE"
-	case flash.OperationDelete:
-		operation = "DELETE"
-	case flash.OperationTruncate:
-		operation = "TRUNCATE"
-	default:
-		return "", errors.New("could not determine event type")
-	}
-	return operation, nil
-}
-func (d *Driver) getOperationFromName(operationName string) (flash.Operation, error) {
-	var event flash.Operation
-
-	switch strings.ToUpper(operationName) {
-	case "INSERT":
-		event = flash.OperationInsert
-	case "UPDATE":
-		event = flash.OperationUpdate
-	case "DELETE":
-		event = flash.OperationDelete
-	case "TRUNCATE":
-		event = flash.OperationTruncate
-	default:
-		return 0, errors.New("could not determine event type")
-	}
-	return event, nil
-}
 func (d *Driver) getUniqueIdentifierForListenerEvent(listenerUid string, e *flash.Operation) (string, error) {
-	operationName, err := d.getOperationNameForEvent(e)
+	operationName, err := e.StrictName()
 	if err != nil {
 		return "", err
 	}
@@ -207,7 +174,7 @@ func (d *Driver) parseEventName(channel string) (string, flash.Operation, error)
 	}
 
 	listenerUid := parts[1]
-	operation, err := d.getOperationFromName(parts[2])
+	operation, err := flash.OperationFromName(parts[2])
 	if err != nil {
 		return "", 0, err
 	}
