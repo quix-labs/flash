@@ -46,16 +46,16 @@ type Driver struct {
 	queryConn *pgconn.PgConn
 
 	// Replication handling
-	replicationConn  *pgconn.PgConn
-	replicationState *replicationState
+	replicationConn *pgconn.PgConn
 
+	replicationState   *replicationState
 	activePublications map[string]bool
 	activeListeners    map[string]map[string]*flash.ListenerConfig // key 1: tableName -> key 2: listenerUid
-	eventsChan         *flash.DatabaseEventsChan
+
+	eventsChan *flash.DatabaseEventsChan
 
 	subscriptionState *subscriptionState
-
-	_clientConfig *flash.ClientConfig
+	_clientConfig     *flash.ClientConfig
 }
 
 func (d *Driver) Init(clientConfig *flash.ClientConfig) error {
@@ -72,7 +72,7 @@ func (d *Driver) Init(clientConfig *flash.ClientConfig) error {
 	return nil
 }
 
-func (d *Driver) HandleEventListenStart(listenerUid string, listenerConfig *flash.ListenerConfig, event *flash.Operation) error {
+func (d *Driver) HandleOperationListenStart(listenerUid string, listenerConfig *flash.ListenerConfig, event flash.Operation) error {
 	tableName := d.sanitizeTableName(listenerConfig.Table, false)
 
 	//TODO ALTER PUBLICATION noinsert SET (publish = 'update, delete');
@@ -85,7 +85,7 @@ func (d *Driver) HandleEventListenStart(listenerUid string, listenerConfig *flas
 		d.subscriptionState.subChan <- &subscriptionClaim{
 			listenerUid:    listenerUid,
 			listenerConfig: listenerConfig,
-			event:          event,
+			operation:      &event,
 		}
 	}()
 
@@ -93,7 +93,7 @@ func (d *Driver) HandleEventListenStart(listenerUid string, listenerConfig *flas
 	return nil
 }
 
-func (d *Driver) HandleEventListenStop(listenerUid string, listenerConfig *flash.ListenerConfig, event *flash.Operation) error {
+func (d *Driver) HandleOperationListenStop(listenerUid string, listenerConfig *flash.ListenerConfig, event flash.Operation) error {
 	tableName := d.sanitizeTableName(listenerConfig.Table, false)
 
 	// Keep in goroutine because channel is listened on start
@@ -101,7 +101,7 @@ func (d *Driver) HandleEventListenStop(listenerUid string, listenerConfig *flash
 		d.subscriptionState.unsubChan <- &subscriptionClaim{
 			listenerUid:    listenerUid,
 			listenerConfig: listenerConfig,
-			event:          event,
+			operation:      &event,
 		}
 	}()
 
@@ -112,13 +112,21 @@ func (d *Driver) HandleEventListenStop(listenerUid string, listenerConfig *flash
 func (d *Driver) Listen(eventsChan *flash.DatabaseEventsChan) error {
 	d.eventsChan = eventsChan
 
-	var errChan = make(chan error)
+	var errChan = make(chan error, 1)
+	var readyChan = make(chan struct{}, 1)
 
 	go func() {
-		if err := d.startQuerying(); err != nil {
+		if err := d.startQuerying(&readyChan); err != nil {
 			errChan <- err
 		}
 	}()
+
+	select {
+	case err := <-errChan:
+		return err
+	case <-readyChan:
+		break
+	}
 
 	go func() {
 		if err := d.startReplicator(); err != nil {
@@ -135,5 +143,9 @@ func (d *Driver) Listen(eventsChan *flash.DatabaseEventsChan) error {
 }
 
 func (d *Driver) Close() error {
-	return d.closeQuerying()
+	err := d.closeQuerying()
+	if err != nil {
+		return err
+	}
+	return d.closeReplicator()
 }

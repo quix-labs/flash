@@ -26,7 +26,7 @@ func main() {
 
 	// Create client
 	flashClient, _ := flash.NewClient(&flash.ClientConfig{
-		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
+		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb?sslmode=disable",
 		Driver:      trigger.NewDriver(&trigger.DriverConfig{}),
 	})
 	flashClient.Attach(postsListener)

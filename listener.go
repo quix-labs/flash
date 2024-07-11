@@ -66,6 +66,7 @@ func (l *Listener) On(operation Operation, callback EventCallback) (func() error
 		return nil, errors.New("callback cannot be nil")
 	}
 
+	// TODO NOTIFY CLIENT FROM UPDATE BUT DO NOT SEND INSERT/DELETE
 	if err := l.addListenedEventIfNeeded(operation); err != nil {
 		return nil, err
 	}

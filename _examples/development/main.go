@@ -7,19 +7,19 @@ import (
 	"github.com/rs/zerolog"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"sync"
 	"time"
 )
 
 func main() {
-	//f, err := os.Create("myprogram.prof")
-	//if err != nil {
-	//	panic(err)
-	//}
-	//pprof.StartCPUProfile(f)
-	//defer pprof.StopCPUProfile()
-	fmt.Println((flash.OperationTruncate).IncludeAll(flash.OperationDelete))
-	return
+	f, err := os.Create("myprogram.prof")
+	if err != nil {
+		panic(err)
+	}
+	pprof.StartCPUProfile(f)
+	defer pprof.StopCPUProfile()
+
 	postsListenerConfig := &flash.ListenerConfig{
 		Table:              "public.posts",
 		MaxParallelProcess: 1, // In most case 1 is ideal because sync between goroutine introduce some delay
@@ -45,16 +45,16 @@ func main() {
 		i++
 		mutex.Unlock()
 
-		switch typedEvent := event.(type) {
-		case *flash.InsertEvent:
-			fmt.Printf("insert - new: %+v\n", typedEvent.New)
-		case *flash.UpdateEvent:
-			fmt.Printf("update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
-		case *flash.DeleteEvent:
-			fmt.Printf("delete - old: %+v \n", typedEvent.Old)
-		case *flash.TruncateEvent:
-			fmt.Printf("truncate \n")
-		}
+		//switch typedEvent := event.(type) {
+		//case *flash.InsertEvent:
+		//	fmt.Printf("insert - new: %+v\n", typedEvent.New)
+		//case *flash.UpdateEvent:
+		//	fmt.Printf("update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
+		//case *flash.DeleteEvent:
+		//	fmt.Printf("delete - old: %+v \n", typedEvent.Old)
+		//case *flash.TruncateEvent:
+		//	fmt.Printf("truncate \n")
+		//}
 	})
 	if err != nil {
 		panic(err)
@@ -72,16 +72,16 @@ func main() {
 		i++
 		mutex.Unlock()
 
-		switch typedEvent := event.(type) {
-		case *flash.InsertEvent:
-			fmt.Printf("2-insert - new: %+v\n", typedEvent.New)
-		case *flash.UpdateEvent:
-			fmt.Printf("2-update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
-		case *flash.DeleteEvent:
-			fmt.Printf("2-delete - old: %+v \n", typedEvent.Old)
-		case *flash.TruncateEvent:
-			fmt.Printf("2-truncate \n")
-		}
+		//switch typedEvent := event.(type) {
+		//case *flash.InsertEvent:
+		//	fmt.Printf("2-insert - new: %+v\n", typedEvent.New)
+		//case *flash.UpdateEvent:
+		//	fmt.Printf("2-update - old: %+v - new: %+v\n", typedEvent.Old, typedEvent.New)
+		//case *flash.DeleteEvent:
+		//	fmt.Printf("2-delete - old: %+v \n", typedEvent.Old)
+		//case *flash.TruncateEvent:
+		//	fmt.Printf("2-truncate \n")
+		//}
 	})
 	if err != nil {
 		panic(err)
@@ -94,15 +94,15 @@ func main() {
 		}
 	}()
 
-	//go func() {
-	//	for {
-	//		time.Sleep(time.Second * 1)
-	//		mutex.Lock()
-	//		fmt.Println(i)
-	//		i = 0
-	//		mutex.Unlock()
-	//	}
-	//}()
+	go func() {
+		for {
+			time.Sleep(time.Second * 1)
+			mutex.Lock()
+			fmt.Println(i)
+			i = 0
+			mutex.Unlock()
+		}
+	}()
 
 	// Create custom logger
 	logger := zerolog.New(os.Stdout).Level(zerolog.TraceLevel).With().Caller().Stack().Timestamp().Logger()
@@ -113,7 +113,7 @@ func main() {
 
 	// Create client
 	clientConfig := &flash.ClientConfig{
-		DatabaseCnx:     "postgresql://devuser:devpass@localhost:5432/devdb",
+		DatabaseCnx:     "postgresql://devuser:devpass@localhost:5432/devdb?sslmode=disable",
 		Logger:          &logger, // Define your custom zerolog.Logger here
 		ShutdownTimeout: time.Second * 2,
 		Driver:          driver,

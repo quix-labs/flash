@@ -13,7 +13,7 @@ func (d *Driver) getFullSlotName(slotName string) string {
 	return d.Config.PublicationSlotPrefix + "-" + slotName
 }
 
-func (d *Driver) getCreatePublicationSlotSql(fullSlotName string, config *flash.ListenerConfig, event *flash.Operation) (string, error) {
+func (d *Driver) getCreatePublicationSlotSql(fullSlotName string, config *flash.ListenerConfig, operation *flash.Operation) (string, error) {
 	if config == nil {
 		return fmt.Sprintf(`CREATE PUBLICATION "%s";`, fullSlotName), nil
 	}
@@ -22,12 +22,13 @@ func (d *Driver) getCreatePublicationSlotSql(fullSlotName string, config *flash.
 	quotedTableName := d.sanitizeTableName(config.Table, true)
 	rawSql := fmt.Sprintf(`ALTER TABLE %s REPLICA IDENTITY FULL;CREATE PUBLICATION "%s" FOR TABLE %s`, quotedTableName, fullSlotName, quotedTableName)
 
-	if event != nil {
-		operationName, err := d.getOperationNameForEvent(event)
+	if operation != nil {
+		//TODO THROW ERROR IF NOT ATOMIC OR JOIN EACH ATOMIC (see .getAlterPublicationEventsSql() )
+		operationName, err := operation.StrictName()
 		if err != nil {
 			return "", err
 		}
-		rawSql += fmt.Sprintf(` WITH (publish = '%s')`, operationName)
+		rawSql += fmt.Sprintf(` WITH (publish = '%s')`, strings.ToLower(operationName))
 	}
 	return rawSql + ";", nil
 }
@@ -37,39 +38,20 @@ func (d *Driver) getAlterPublicationEventsSql(publication *activePublication) (s
 		return "", errors.New("publication is nil")
 	}
 
-	var events []string
-	for targetEvent := flash.Operation(1); targetEvent != 0 && targetEvent <= flash.OperationAll; targetEvent <<= 1 {
-		if (*publication.events)&targetEvent == 0 {
-			continue
-		}
-		operation, err := d.getOperationNameForEvent(&targetEvent)
+	var rawOperations []string
+	for _, targetOperation := range publication.operations.GetAtomics() {
+		operation, err := targetOperation.StrictName()
 		if err != nil {
 			return "", err
 		}
-		events = append(events, operation)
+		rawOperations = append(rawOperations, strings.ToLower(operation))
 	}
 
-	return fmt.Sprintf(`ALTER PUBLICATION "%s" SET (publish = '%s');`, publication.slotName, strings.Join(events, ", ")), nil
+	return fmt.Sprintf(`ALTER PUBLICATION "%s" SET (publish = '%s');`, publication.slotName, strings.Join(rawOperations, ", ")), nil
 }
 
 func (d *Driver) getDropPublicationSlotSql(fullSlotName string) string {
 	return fmt.Sprintf(`DROP PUBLICATION IF EXISTS "%s";`, fullSlotName)
-}
-func (d *Driver) getOperationNameForEvent(e *flash.Operation) (string, error) {
-	operation := ""
-	switch *e {
-	case flash.OperationInsert:
-		operation = "insert"
-	case flash.OperationUpdate:
-		operation = "update"
-	case flash.OperationDelete:
-		operation = "delete"
-	case flash.OperationTruncate:
-		operation = "truncate"
-	default:
-		return "", errors.New("could not determine event type")
-	}
-	return operation, nil
 }
 
 // Returns tablename as format public.posts.

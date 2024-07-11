@@ -28,7 +28,7 @@ func main() {
 	driver := trigger.NewDriver(&trigger.DriverConfig{})
 	// Create client
 	clientConfig := &flash.ClientConfig{
-		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
+		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb?sslmode=disable",
 		Logger:      &logger, // Define your custom zerolog.Logger here
 		Driver:      driver,
 	}
@@ -40,8 +40,18 @@ func main() {
 	flashClient.Attach(postsListener)
 
 	// Start listening
-	go flashClient.Start() // Error Handling
-	defer flashClient.Close()
+	go func() {
+		err := flashClient.Start()
+		if err != nil {
+			panic(err)
+		}
+	}() // Error Handling
+	defer func(flashClient *flash.Client) {
+		err := flashClient.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(flashClient)
 
 	// Keep process running
 	select {}

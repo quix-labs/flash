@@ -9,13 +9,13 @@ import (
 type subscriptionClaim struct {
 	listenerUid    string
 	listenerConfig *flash.ListenerConfig
-	event          *flash.Operation
+	operation      *flash.Operation
 }
 
 type activePublication struct {
 	listenerConfig *flash.ListenerConfig
 	slotName       string
-	events         *flash.Operation // Use with bitwise to handle combined events
+	operations     *flash.Operation // Use with bitwise to handle combined operations
 }
 
 // Key -> listenerUid
@@ -38,7 +38,7 @@ func (d *Driver) initQuerying() error {
 	return nil
 }
 
-func (d *Driver) startQuerying() error {
+func (d *Driver) startQuerying(readyChan *chan struct{}) error {
 	// Create connection
 	config, err := pgconn.ParseConfig(d._clientConfig.DatabaseCnx)
 	if err != nil {
@@ -49,17 +49,7 @@ func (d *Driver) startQuerying() error {
 		return err
 	}
 
-	// Create false publication to avoid START_REPLICATION error
-	initSlotName := d.getFullSlotName("init")
-	rawSql, err := d.getCreatePublicationSlotSql(initSlotName, nil, nil)
-	if err != nil {
-		return err
-	}
-	if _, err := d.sqlExec(d.queryConn, rawSql); err != nil {
-		return err
-	}
-	d.activePublications[initSlotName] = true
-
+	*readyChan <- struct{}{}
 	for {
 		select {
 
@@ -69,15 +59,16 @@ func (d *Driver) startQuerying() error {
 				continue
 			}
 
-			prevEvents := *currentSub.events
-			*currentSub.events &= ^(*claimSub.event) // Remove event from listened
+			// TODO Operation.Remove()
+			prevEvents := *currentSub.operations
+			*currentSub.operations &= ^(*claimSub.operation) // Remove operation from listened
 
 			// Bypass if no changes
-			if *currentSub.events == prevEvents {
+			if *currentSub.operations == prevEvents {
 				return nil
 			}
 
-			if *currentSub.events > 0 {
+			if len(currentSub.operations.GetAtomics()) > 0 {
 				alterSql, err := d.getAlterPublicationEventsSql(currentSub)
 				if err != nil {
 					return err
@@ -99,11 +90,11 @@ func (d *Driver) startQuerying() error {
 				currentSub = &activePublication{
 					listenerConfig: claimSub.listenerConfig,
 					slotName:       d.getFullSlotName(claimSub.listenerUid),
-					events:         claimSub.event,
+					operations:     claimSub.operation,
 				}
 
 				slotName := d.getFullSlotName(claimSub.listenerUid)
-				rawSql, err := d.getCreatePublicationSlotSql(slotName, claimSub.listenerConfig, claimSub.event)
+				rawSql, err := d.getCreatePublicationSlotSql(slotName, claimSub.listenerConfig, claimSub.operation)
 				if err != nil {
 					return err
 				}
@@ -116,11 +107,13 @@ func (d *Driver) startQuerying() error {
 				d.replicationState.restartChan <- struct{}{} // Send restart signal
 
 			} else {
-				prevEvents := *currentSub.events
-				*currentSub.events |= *claimSub.event //Append event to listened
+				prevEvents := *currentSub.operations
+
+				// TODO Operation.Append() or Operation.Merge()
+				*currentSub.operations |= *claimSub.operation //Append operation to listened
 
 				// Bypass if no changes
-				if prevEvents == *currentSub.events {
+				if prevEvents == *currentSub.operations {
 					return nil
 				}
 
@@ -137,17 +130,17 @@ func (d *Driver) startQuerying() error {
 }
 
 func (d *Driver) closeQuerying() error {
-	for publication, _ := range d.activePublications {
-		if _, err := d.sqlExec(d.queryConn, d.getDropPublicationSlotSql(publication)); err != nil {
-			return err
-		}
-	}
-
 	if d.queryConn != nil {
-		err := d.queryConn.Close(context.TODO())
+		for publication, _ := range d.activePublications {
+			if _, err := d.sqlExec(d.queryConn, d.getDropPublicationSlotSql(publication)); err != nil {
+				return err
+			}
+		}
+		err := d.queryConn.Close(context.Background())
 		if err != nil {
 			return err
 		}
+		d.queryConn = nil
 	}
 	return nil
 }

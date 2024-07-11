@@ -19,19 +19,19 @@ func (d *Driver) processXld(xld *pglogrepl.XLogData) (bool, error) {
 }
 
 func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (bool, error) {
-	switch logicalMsg := logicalMsg.(type) {
+	switch typedLogicalMsg := logicalMsg.(type) {
 	case *pglogrepl.RelationMessageV2:
-		d.replicationState.relations[logicalMsg.RelationID] = logicalMsg
+		d.replicationState.relations[typedLogicalMsg.RelationID] = typedLogicalMsg
 
 	case *pglogrepl.BeginMessage:
-		if d.replicationState.lastWrittenLSN > logicalMsg.FinalLSN {
-			d._clientConfig.Logger.Trace().Msgf("Received stale message, ignoring. Last written LSN: %s Message LSN: %s", d.replicationState.lastWrittenLSN, logicalMsg.FinalLSN)
+		if d.replicationState.lastWrittenLSN > typedLogicalMsg.FinalLSN {
+			d._clientConfig.Logger.Trace().Msgf("Received stale message, ignoring. Last written LSN: %s Message LSN: %s", d.replicationState.lastWrittenLSN, typedLogicalMsg.FinalLSN)
 			d.replicationState.processMessages = false
 			break
 		}
 
 		d.replicationState.processMessages = true
-		d.replicationState.currentTransactionLSN = logicalMsg.FinalLSN
+		d.replicationState.currentTransactionLSN = typedLogicalMsg.FinalLSN
 
 	case *pglogrepl.CommitMessage:
 		d.replicationState.processMessages = false
@@ -40,7 +40,7 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 	case *pglogrepl.InsertMessageV2:
 		// If we are in replicationState, append XLogData to memory to run/delete after stream commit/abort
 		if d.replicationState.inStream && !fromQueue {
-			d.replicationState.streamQueues[logicalMsg.Xid] = append(d.replicationState.streamQueues[logicalMsg.Xid], logicalMsg)
+			d.replicationState.streamQueues[typedLogicalMsg.Xid] = append(d.replicationState.streamQueues[typedLogicalMsg.Xid], &logicalMsg)
 			break
 		}
 
@@ -49,13 +49,13 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			break
 		}
 
-		tableName, _ := d.getRelationTableName(logicalMsg.RelationID)
+		tableName, _ := d.getRelationTableName(typedLogicalMsg.RelationID)
 		listeners, exists := d.activeListeners[tableName]
 		if !exists {
 			break
 		}
 
-		newData, err := d.parseTuple(logicalMsg.RelationID, logicalMsg.Tuple)
+		newData, err := d.parseTuple(typedLogicalMsg.RelationID, typedLogicalMsg.Tuple)
 		if err != nil {
 			return false, err
 		}
@@ -75,7 +75,7 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 	case *pglogrepl.UpdateMessageV2:
 		// If we are in replicationState, append XLogData to memory to run/delete after stream commit/abort
 		if d.replicationState.inStream && !fromQueue {
-			d.replicationState.streamQueues[logicalMsg.Xid] = append(d.replicationState.streamQueues[logicalMsg.Xid], logicalMsg)
+			d.replicationState.streamQueues[typedLogicalMsg.Xid] = append(d.replicationState.streamQueues[typedLogicalMsg.Xid], &logicalMsg)
 			break
 		}
 
@@ -84,18 +84,18 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			break
 		}
 
-		tableName, _ := d.getRelationTableName(logicalMsg.RelationID)
+		tableName, _ := d.getRelationTableName(typedLogicalMsg.RelationID)
 		listeners, exists := d.activeListeners[tableName]
 		if !exists {
 			break
 		}
 
-		newData, err := d.parseTuple(logicalMsg.RelationID, logicalMsg.NewTuple)
+		newData, err := d.parseTuple(typedLogicalMsg.RelationID, typedLogicalMsg.NewTuple)
 		if err != nil {
 			return false, err
 		}
 
-		oldData, err := d.parseTuple(logicalMsg.RelationID, logicalMsg.OldTuple)
+		oldData, err := d.parseTuple(typedLogicalMsg.RelationID, typedLogicalMsg.OldTuple)
 		if err != nil {
 			return false, err
 		}
@@ -131,7 +131,7 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			reducedOldData := d.ExtractFields(oldData, listenerConfig.Fields)
 			reducedNewData := d.ExtractFields(newData, listenerConfig.Fields)
 			if d.CheckEquals(reducedNewData, reducedOldData) {
-				continue //Ignore event if update is not in listener fields
+				continue //Ignore operation if update is not in listener fields
 			}
 			*d.eventsChan <- &flash.DatabaseEvent{
 				ListenerUid: listenerUid,
@@ -142,7 +142,7 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 	case *pglogrepl.DeleteMessageV2:
 		// If we are in replicationState, append XLogData to memory to run/delete after stream commit/abort
 		if d.replicationState.inStream && !fromQueue {
-			d.replicationState.streamQueues[logicalMsg.Xid] = append(d.replicationState.streamQueues[logicalMsg.Xid], logicalMsg)
+			d.replicationState.streamQueues[typedLogicalMsg.Xid] = append(d.replicationState.streamQueues[typedLogicalMsg.Xid], &logicalMsg)
 			break
 		}
 
@@ -151,12 +151,12 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			break
 		}
 
-		tableName, _ := d.getRelationTableName(logicalMsg.RelationID)
+		tableName, _ := d.getRelationTableName(typedLogicalMsg.RelationID)
 		listeners, exists := d.activeListeners[tableName]
 		if !exists {
 			break
 		}
-		oldData, err := d.parseTuple(logicalMsg.RelationID, logicalMsg.OldTuple)
+		oldData, err := d.parseTuple(typedLogicalMsg.RelationID, typedLogicalMsg.OldTuple)
 		if err != nil {
 			return false, err
 		}
@@ -176,7 +176,7 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 	case *pglogrepl.TruncateMessageV2:
 		// If we are in replicationState, append XLogData to memory to run/delete after stream commit/abort
 		if d.replicationState.inStream && !fromQueue {
-			d.replicationState.streamQueues[logicalMsg.Xid] = append(d.replicationState.streamQueues[logicalMsg.Xid], logicalMsg)
+			d.replicationState.streamQueues[typedLogicalMsg.Xid] = append(d.replicationState.streamQueues[typedLogicalMsg.Xid], &logicalMsg)
 			break
 		}
 
@@ -185,7 +185,7 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			break
 		}
 
-		for _, relId := range logicalMsg.RelationIDs {
+		for _, relId := range typedLogicalMsg.RelationIDs {
 			tableName, _ := d.getRelationTableName(relId)
 			listeners, exists := d.activeListeners[tableName]
 			if !exists {
@@ -199,49 +199,49 @@ func (d *Driver) processMessage(logicalMsg pglogrepl.Message, fromQueue bool) (b
 			}
 		}
 	case *pglogrepl.TypeMessageV2:
-		d._clientConfig.Logger.Trace().Msgf("typeMessage for xid %d\n", logicalMsg.Xid)
+		d._clientConfig.Logger.Trace().Msgf("typeMessage for xid %d\n", typedLogicalMsg.Xid)
 	case *pglogrepl.OriginMessage:
-		d._clientConfig.Logger.Trace().Msgf("originMessage for xid %s\n", logicalMsg.Name)
+		d._clientConfig.Logger.Trace().Msgf("originMessage for xid %s\n", typedLogicalMsg.Name)
 	case *pglogrepl.LogicalDecodingMessageV2:
-		d._clientConfig.Logger.Trace().Msgf("Logical decoding message: %q, %q, %d", logicalMsg.Prefix, logicalMsg.Content, logicalMsg.Xid)
+		d._clientConfig.Logger.Trace().Msgf("Logical decoding message: %q, %q, %d", typedLogicalMsg.Prefix, typedLogicalMsg.Content, typedLogicalMsg.Xid)
 
 	case *pglogrepl.StreamStartMessageV2:
 		d.replicationState.inStream = true
 		// Create dynamic queue if not exists
-		if _, exists := d.replicationState.streamQueues[logicalMsg.Xid]; !exists {
-			d.replicationState.streamQueues[logicalMsg.Xid] = []pglogrepl.Message{} // Dynamic size
+		if _, exists := d.replicationState.streamQueues[typedLogicalMsg.Xid]; !exists {
+			d.replicationState.streamQueues[typedLogicalMsg.Xid] = []*pglogrepl.Message{} // Dynamic size
 		}
-		d._clientConfig.Logger.Trace().Msgf("Stream start message: xid %d, first segment? %d", logicalMsg.Xid, logicalMsg.FirstSegment)
+		d._clientConfig.Logger.Trace().Msgf("Stream start message: xid %d, first segment? %d", typedLogicalMsg.Xid, typedLogicalMsg.FirstSegment)
 
 	case *pglogrepl.StreamStopMessageV2:
 		d.replicationState.inStream = false
 		d._clientConfig.Logger.Trace().Msgf("Stream stop message")
 	case *pglogrepl.StreamCommitMessageV2:
-		d._clientConfig.Logger.Trace().Msgf("Stream commit message: xid %d", logicalMsg.Xid)
+		d._clientConfig.Logger.Trace().Msgf("Stream commit message: xid %d", typedLogicalMsg.Xid)
 
-		// Process all events then remove queue
-		queueLen := len(d.replicationState.streamQueues[logicalMsg.Xid])
+		// Process all operations then remove queue
+		queueLen := len(d.replicationState.streamQueues[typedLogicalMsg.Xid])
 		if queueLen > 0 {
-			d._clientConfig.Logger.Trace().Msgf("Processing %d entries from stream queue: xid %d", queueLen, logicalMsg.Xid)
+			d._clientConfig.Logger.Trace().Msgf("Processing %d entries from stream queue: xid %d", queueLen, typedLogicalMsg.Xid)
 			// ⚠️ Do not use goroutine to handle in parallel, order is very important
-			for _, message := range d.replicationState.streamQueues[logicalMsg.Xid] {
+			for _, message := range d.replicationState.streamQueues[typedLogicalMsg.Xid] {
 				// Cannot flush position here because return statement can cause loss
-				_, err := d.processMessage(message, true)
+				_, err := d.processMessage(*message, true)
 				if err != nil {
 					return false, err
 				}
 			}
 		}
-		d._clientConfig.Logger.Trace().Msgf("Delete %d entries from stream queue: xid %d", queueLen, logicalMsg.Xid)
-		delete(d.replicationState.streamQueues, logicalMsg.Xid)
+		d._clientConfig.Logger.Trace().Msgf("Delete %d entries from stream queue: xid %d", queueLen, typedLogicalMsg.Xid)
+		delete(d.replicationState.streamQueues, typedLogicalMsg.Xid)
 		return true, nil // FLUSH position
 
 	case *pglogrepl.StreamAbortMessageV2:
-		d._clientConfig.Logger.Trace().Msgf("Stream abort message: xid %d", logicalMsg.Xid)
-		d._clientConfig.Logger.Trace().Msgf("Delete %d entries from stream queue: xid %d", len(d.replicationState.streamQueues[logicalMsg.Xid]), logicalMsg.Xid)
-		delete(d.replicationState.streamQueues, logicalMsg.Xid)
+		d._clientConfig.Logger.Trace().Msgf("Stream abort message: xid %d", typedLogicalMsg.Xid)
+		d._clientConfig.Logger.Trace().Msgf("Delete %d entries from stream queue: xid %d", len(d.replicationState.streamQueues[typedLogicalMsg.Xid]), typedLogicalMsg.Xid)
+		delete(d.replicationState.streamQueues, typedLogicalMsg.Xid)
 	default:
-		d._clientConfig.Logger.Trace().Msgf("Unknown message type in pgoutput stream: %T", logicalMsg)
+		d._clientConfig.Logger.Trace().Msgf("Unknown message type in pgoutput stream: %T", typedLogicalMsg)
 	}
 
 	return false, nil
