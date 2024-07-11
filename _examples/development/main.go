@@ -6,7 +6,6 @@ import (
 	"github.com/quix-labs/flash/drivers/wal_logical"
 	"github.com/rs/zerolog"
 	"os"
-	"os/signal"
 	"runtime/pprof"
 	"sync"
 	"time"
@@ -136,10 +135,12 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal (Ctrl+C)
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
-	<-interrupt
-
-	fmt.Println("Program terminated.")
+	select {}
+	//
+	//// Wait for interrupt signal (Ctrl+C)
+	//interrupt := make(chan os.Signal, 1)
+	//signal.Notify(interrupt, os.Interrupt)
+	//<-interrupt
+	//
+	//fmt.Println("Program terminated.")
 }

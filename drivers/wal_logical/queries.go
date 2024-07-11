@@ -18,9 +18,10 @@ func (d *Driver) getCreatePublicationSlotSql(fullSlotName string, config *flash.
 		return fmt.Sprintf(`CREATE PUBLICATION "%s";`, fullSlotName), nil
 	}
 
+	rawSql := d.getDropPublicationSlotSql(fullSlotName)
 	// SET REPLICA IDENTITY TO FULL ON CREATION
 	quotedTableName := d.sanitizeTableName(config.Table, true)
-	rawSql := fmt.Sprintf(`ALTER TABLE %s REPLICA IDENTITY FULL;CREATE PUBLICATION "%s" FOR TABLE %s`, quotedTableName, fullSlotName, quotedTableName)
+	rawSql += fmt.Sprintf(`ALTER TABLE %s REPLICA IDENTITY FULL;CREATE PUBLICATION "%s" FOR TABLE %s`, quotedTableName, fullSlotName, quotedTableName)
 
 	if operation != nil {
 		//TODO THROW ERROR IF NOT ATOMIC OR JOIN EACH ATOMIC (see .getAlterPublicationEventsSql() )
