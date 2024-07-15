@@ -133,12 +133,14 @@ func (d *Driver) getCreateTriggerSqlForOperation(listenerUid string, l *flash.Li
 
 	if operation != "TRUNCATE" {
 		statement += fmt.Sprintf(`
-			CREATE OR REPLACE TRIGGER "%s" AFTER %s ON %s FOR EACH ROW EXECUTE PROCEDURE "%s"."%s"();`,
-			triggerName, operation, d.sanitizeTableName(l.Table), d.Config.Schema, triggerFnName)
+			DROP TRIGGER IF EXISTS "%s" ON %s;
+			CREATE TRIGGER "%s" AFTER %s ON %s FOR EACH ROW EXECUTE PROCEDURE "%s"."%s"();`,
+			triggerName, d.sanitizeTableName(l.Table), triggerName, operation, d.sanitizeTableName(l.Table), d.Config.Schema, triggerFnName)
 	} else {
 		statement += fmt.Sprintf(`
-			CREATE OR REPLACE TRIGGER "%s" BEFORE TRUNCATE ON %s FOR EACH STATEMENT EXECUTE PROCEDURE "%s"."%s"();`,
-			triggerName, d.sanitizeTableName(l.Table), d.Config.Schema, triggerFnName)
+			DROP TRIGGER IF EXISTS "%s" ON %s;
+			CREATE TRIGGER "%s" BEFORE TRUNCATE ON %s FOR EACH STATEMENT EXECUTE PROCEDURE "%s"."%s"();`,
+			triggerName, d.sanitizeTableName(l.Table), triggerName, d.sanitizeTableName(l.Table), d.Config.Schema, triggerFnName)
 	}
 
 	return statement, eventName, nil
