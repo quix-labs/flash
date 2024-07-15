@@ -109,6 +109,7 @@ func (d *Driver) getCreateTriggerSqlForOperation(listenerUid string, l *flash.Li
 		}
 
 		if rawConditionSql == "" {
+
 			statement = fmt.Sprintf(`
 				CREATE OR REPLACE FUNCTION "%s"."%s"() RETURNS trigger AS $trigger$
 				BEGIN 
@@ -132,11 +133,13 @@ func (d *Driver) getCreateTriggerSqlForOperation(listenerUid string, l *flash.Li
 	}
 
 	if operation != "TRUNCATE" {
+		// Keep drop + create instead of 'create or replace' for Pgsql13 compatibility
 		statement += fmt.Sprintf(`
 			DROP TRIGGER IF EXISTS "%s" ON %s;
 			CREATE TRIGGER "%s" AFTER %s ON %s FOR EACH ROW EXECUTE PROCEDURE "%s"."%s"();`,
 			triggerName, d.sanitizeTableName(l.Table), triggerName, operation, d.sanitizeTableName(l.Table), d.Config.Schema, triggerFnName)
 	} else {
+		// Keep drop + create instead of 'create or replace' for Pgsql13 compatibility
 		statement += fmt.Sprintf(`
 			DROP TRIGGER IF EXISTS "%s" ON %s;
 			CREATE TRIGGER "%s" BEFORE TRUNCATE ON %s FOR EACH STATEMENT EXECUTE PROCEDURE "%s"."%s"();`,
