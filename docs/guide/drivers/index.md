@@ -2,10 +2,10 @@
 
 ## Implemented
 
-| Name                         |  DB impact   | Operations | Configurable primary key | Custom Conditions | Partial Fields |                   Graceful Shutdown/Restart                    |
-|------------------------------|:------------:|:----------:|:------------------------:|:-----------------:|:--------------:|:--------------------------------------------------------------:|
-| [trigger](./trigger)         | high&nbsp;⚠️ |    All     |     not implemented      |         ✅         |       ✅        |                               ✅                                |
-| [wal_logical](./wal_logical) |  low&nbsp;⚡  |    All     |     not implemented      |         ✅         |       ✅        | partial ⚠️ <br/>cannot restart if crash without client.Close() |
+| Name                          |  DB impact   | Operations | Configurable primary key | Custom Conditions | Partial Fields |                   Graceful Shutdown/Restart                    |
+|-------------------------------|:------------:|:----------:|:------------------------:|:-----------------:|:--------------:|:--------------------------------------------------------------:|
+| [trigger](./trigger/)         | high&nbsp;⚠️ |    All     |     not implemented      |         ✅         |       ✅        |                               ✅                                |
+| [wal_logical](./wal_logical/) |  low&nbsp;⚡  |    All     |     not implemented      |         ✅         |       ✅        | partial ⚠️ <br/>cannot restart if crash without client.Close() |
 
 ## NOT IMPLEMENTED
 
