@@ -72,7 +72,7 @@ When running multiple clients in parallel, ensure each has unique values for the
 
 ### Advanced Features support
 
-See [Drivers Overview](/drivers/) for compatibility table
+See [Drivers Overview](../) for compatibility table
 
 ### Internal workflow
 

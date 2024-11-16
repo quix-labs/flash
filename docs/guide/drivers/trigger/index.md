@@ -57,7 +57,7 @@ If you encounter any artifacts, you can simply drop the PostgreSQL schema with y
 
 ### Advanced Features support
 
-See [Drivers Overview](/drivers/) for compatibility table
+See [Drivers Overview](../) for compatibility table
 
 ### Internal workflow
 
