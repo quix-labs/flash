@@ -72,8 +72,8 @@ When running multiple clients in parallel, ensure each has unique values for the
 
 ### Advanced Features support
 
-See [drivers/README.MD](../README.md) for compatibility table
+See [Drivers Overview](/drivers) for compatibility table
 
 ### Internal workflow
 
-You can find a workflow graph [here](./WORKFLOW.md).
+You can find a workflow graph [here](./WORKFLOW).

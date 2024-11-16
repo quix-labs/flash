@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/lib/pq"
 	"github.com/quix-labs/flash"
+	"net/url"
 	"time"
 )
 
@@ -44,8 +45,8 @@ type Driver struct {
 	_clientConfig *flash.ClientConfig
 }
 
-func (d *Driver) HandleEventListenStart(listenerUid string, lc *flash.ListenerConfig, operation *flash.Operation) error {
-	createTriggerSql, eventName, err := d.getCreateTriggerSqlForOperation(listenerUid, lc, operation)
+func (d *Driver) HandleOperationListenStart(listenerUid string, lc *flash.ListenerConfig, operation flash.Operation) error {
+	createTriggerSql, eventName, err := d.getCreateTriggerSqlForOperation(listenerUid, lc, &operation)
 	if err != nil {
 		return err
 	}
@@ -57,8 +58,8 @@ func (d *Driver) HandleEventListenStart(listenerUid string, lc *flash.ListenerCo
 	return d.addEventToListened(eventName)
 }
 
-func (d *Driver) HandleEventListenStop(listenerUid string, lc *flash.ListenerConfig, event *flash.Operation) error {
-	createTriggerSql, eventName, err := d.getDeleteTriggerSqlForEvent(listenerUid, lc, event)
+func (d *Driver) HandleOperationListenStop(listenerUid string, lc *flash.ListenerConfig, event flash.Operation) error {
+	createTriggerSql, eventName, err := d.getDeleteTriggerSqlForEvent(listenerUid, lc, &event)
 	if err != nil {
 		return err
 	}
@@ -73,7 +74,16 @@ func (d *Driver) HandleEventListenStop(listenerUid string, lc *flash.ListenerCon
 func (d *Driver) Init(_clientConfig *flash.ClientConfig) error {
 	d._clientConfig = _clientConfig
 
-	connector, err := pq.NewConnector(d._clientConfig.DatabaseCnx + "?application_name=test&sslmode=disable")
+	parsedCnx, err := url.Parse(d._clientConfig.DatabaseCnx)
+	if err != nil {
+		return err
+	}
+
+	query := parsedCnx.Query()
+	query.Set("application_name", "test")
+	parsedCnx.RawQuery = query.Encode()
+
+	connector, err := pq.NewConnector(parsedCnx.String())
 	if err != nil {
 		return err
 	}
@@ -98,7 +108,16 @@ func (d *Driver) Listen(eventsChan *flash.DatabaseEventsChan) error {
 		}
 	}
 
-	d.pgListener = pq.NewListener(d._clientConfig.DatabaseCnx+"?application_name=test_listen&sslmode=disable", 1*time.Second, time.Minute, reportProblem)
+	parsedCnx, err := url.Parse(d._clientConfig.DatabaseCnx)
+	if err != nil {
+		return err
+	}
+
+	query := parsedCnx.Query()
+	query.Set("application_name", "test_listen")
+	parsedCnx.RawQuery = query.Encode()
+
+	d.pgListener = pq.NewListener(parsedCnx.String(), 1*time.Second, time.Minute, reportProblem)
 
 	// Initialize subChan with activeEvents in queue
 	go func() {
@@ -152,7 +171,6 @@ func (d *Driver) Listen(eventsChan *flash.DatabaseEventsChan) error {
 					newData = &typedData
 				}
 				if od, exists := data["old"]; exists && od != nil {
-					fmt.Println(od)
 					typedData := flash.EventData(od.(map[string]any))
 					oldData = &typedData
 				}

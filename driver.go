@@ -9,7 +9,7 @@ type Driver interface {
 	Init(clientConfig *ClientConfig) error
 	Close() error
 
-	HandleEventListenStart(listenerUid string, listenerConfig *ListenerConfig, event *Operation) error
-	HandleEventListenStop(listenerUid string, listenerConfig *ListenerConfig, event *Operation) error
+	HandleOperationListenStart(listenerUid string, listenerConfig *ListenerConfig, operation Operation) error
+	HandleOperationListenStop(listenerUid string, listenerConfig *ListenerConfig, operation Operation) error
 	Listen(eventsChan *DatabaseEventsChan) error
 }

@@ -22,7 +22,7 @@ type replicationState struct {
 
 	processMessages bool
 	inStream        bool
-	streamQueues    map[uint32][]pglogrepl.Message
+	streamQueues    map[uint32][]*pglogrepl.Message
 
 	restartChan chan struct{}
 }
@@ -32,14 +32,19 @@ func (d *Driver) initReplicator() error {
 		lastWrittenLSN: pglogrepl.LSN(0), //TODO KEEP IN FILE OR IGNORE
 		relations:      make(map[uint32]*pglogrepl.RelationMessageV2),
 		typeMap:        pgtype.NewMap(),
-		streamQueues:   make(map[uint32][]pglogrepl.Message),
+		streamQueues:   make(map[uint32][]*pglogrepl.Message),
 		restartChan:    make(chan struct{}),
 	}
 	return nil
 }
 
 func (d *Driver) startReplicator() error {
-	if err := d.restartConn(); err != nil {
+	if err := d.startConn(); err != nil {
+		d._clientConfig.Logger.Error().Err(err).Msgf("received err: %s", err)
+		return err
+	}
+	if err := d.startReplication(); err != nil {
+		d._clientConfig.Logger.Error().Err(err).Msgf("received err: %s", err)
 		return err
 	}
 
@@ -50,10 +55,31 @@ func (d *Driver) startReplicator() error {
 	for {
 		select {
 		case <-d.replicationState.restartChan:
-			if err := d.restartConn(); err != nil {
+
+			if d.replicationConn == nil {
+				continue
+			}
+			if err := d.replicationConn.Close(context.Background()); err != nil {
+				d._clientConfig.Logger.Error().Err(err).Msgf("received err: %s", err)
 				return err
 			}
+			if err := d.startConn(); err != nil {
+				d._clientConfig.Logger.Error().Err(err).Msgf("received err: %s", err)
+				return err
+			}
+			if err := d.startReplication(); err != nil {
+				d._clientConfig.Logger.Error().Err(err).Msgf("received err: %s", err)
+				return err
+			}
+
+			continue
+
 		default:
+			if d.replicationConn == nil {
+				time.Sleep(time.Millisecond * 100)
+				continue
+			}
+
 			if time.Now().After(nextStandbyMessageDeadline) && d.replicationState.lastReceivedLSN > 0 {
 				err := pglogrepl.SendStandbyStatusUpdate(context.Background(), d.replicationConn, pglogrepl.StandbyStatusUpdate{
 					WALWritePosition: d.replicationState.lastWrittenLSN + 1,
@@ -61,6 +87,7 @@ func (d *Driver) startReplicator() error {
 					WALApplyPosition: d.replicationState.lastReceivedLSN + 1,
 				})
 				if err != nil {
+					d._clientConfig.Logger.Error().Err(err).Msgf("received err: %s", err)
 					return err
 				}
 				d._clientConfig.Logger.Trace().Msg("Sent Standby status message at " + (d.replicationState.lastWrittenLSN + 1).String())
@@ -70,11 +97,14 @@ func (d *Driver) startReplicator() error {
 			ctx, cancel := context.WithDeadline(context.Background(), nextStandbyMessageDeadline)
 			rawMsg, err := d.replicationConn.ReceiveMessage(ctx)
 			cancel()
+
 			if err != nil {
 				if pgconn.Timeout(err) {
 					continue
 				}
-				return err //TODO handle Error With Retry
+				d._clientConfig.Logger.Warn().Err(err).Msgf("received err: %s", err)
+				time.Sleep(time.Millisecond * 100)
+				continue // CLOSED CONNECTION TODO handle and return err when needed
 			}
 
 			if errMsg, ok := rawMsg.(*pgproto3.ErrorResponse); ok {
@@ -123,12 +153,36 @@ func (d *Driver) startReplicator() error {
 	}
 }
 
-func (d *Driver) restartConn() error {
+func (d *Driver) closeReplicator() error {
 	if d.replicationConn != nil {
+		// CLOSE ACTUAL
 		if err := d.replicationConn.Close(context.Background()); err != nil {
+			d._clientConfig.Logger.Error().Err(err).Msgf("received err: %s", err)
 			return err
 		}
+		//REMAKE NEW CONN WITHOUT STARTING REPLICATION
+		if err := d.startConn(); err != nil {
+			d._clientConfig.Logger.Error().Err(err).Msgf("received err: %s", err)
+			return err
+		}
+		dropReplicationSql := fmt.Sprintf(`select pg_drop_replication_slot(slot_name) from pg_replication_slots where slot_name = '%s';`, d.Config.ReplicationSlot)
+		_, err := d.sqlExec(d.replicationConn, dropReplicationSql)
+		if err != nil {
+			d._clientConfig.Logger.Error().Err(err).Msgf("received err: %s", err)
+			return err
+		}
+		// CLOSE TEMP
+		if err := d.replicationConn.Close(context.Background()); err != nil {
+			d._clientConfig.Logger.Error().Err(err).Msgf("received err: %s", err)
+			return err
+		}
+
+		d.replicationConn = nil
 	}
+	return nil
+}
+
+func (d *Driver) startConn() error {
 	// Create querying and listening connections
 	config, err := pgconn.ParseConfig(d._clientConfig.DatabaseCnx)
 	if err != nil {
@@ -136,24 +190,38 @@ func (d *Driver) restartConn() error {
 	}
 	config.RuntimeParams["application_name"] = "Flash: replication (replicator)"
 	config.RuntimeParams["replication"] = "database"
-	if d.replicationConn, err = pgconn.ConnectConfig(context.TODO(), config); err != nil {
+
+	if d.replicationConn, err = pgconn.ConnectConfig(context.Background(), config); err != nil {
 		return err
 	}
 
-	// Get last X Post for starting event
-	//sysident, err := pglogrepl.IdentifySystem(context.Background(), d.replicationConn)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//clientXLogPos := sysident.XLogPos
+	// Create false publication to avoid START_REPLICATION error
+	initSlotName := d.getFullSlotName("init")
 
+	// DROP OLD
+	dropPublicationSql := d.getDropPublicationSlotSql(initSlotName)
+	dropReplicationSql := fmt.Sprintf(`select pg_drop_replication_slot(slot_name) from pg_replication_slots where slot_name = '%s';`, d.Config.ReplicationSlot)
+	createPublicationSlotSql, err := d.getCreatePublicationSlotSql(initSlotName, nil, nil)
+	if err != nil {
+		return err
+	}
+
+	d.activePublications[initSlotName] = true
+
+	if _, err := d.sqlExec(d.replicationConn, dropPublicationSql+dropReplicationSql+createPublicationSlotSql); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (d *Driver) startReplication() error {
 	if _, err := d.sqlExec(d.replicationConn, fmt.Sprintf(`CREATE_REPLICATION_SLOT "%s" TEMPORARY LOGICAL "pgoutput";`, d.Config.ReplicationSlot)); err != nil {
 		return err
 	}
-	d._clientConfig.Logger.Debug().Msg("Created temporary replication slot: " + d.Config.ReplicationSlot)
 
-	var activePublications []string
+	initSlotName := d.getFullSlotName("init")
+	activePublications := []string{initSlotName}
 	for publicationName, _ := range d.activePublications {
 		activePublications = append(activePublications, publicationName)
 	}

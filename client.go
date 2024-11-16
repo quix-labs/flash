@@ -73,9 +73,9 @@ func (c *Client) Init() error {
 		go func() {
 			defer wg.Done()
 			err := listener.Init(func(event Operation) error {
-				return c.Config.Driver.HandleEventListenStart(listenerUid, listener.Config, &event)
+				return c.Config.Driver.HandleOperationListenStart(listenerUid, listener.Config, event)
 			}, func(event Operation) error {
-				return c.Config.Driver.HandleEventListenStop(listenerUid, listener.Config, &event)
+				return c.Config.Driver.HandleOperationListenStop(listenerUid, listener.Config, event)
 			})
 			errChan <- err
 		}()

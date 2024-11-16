@@ -1,16 +1,22 @@
+# Start listening
+
+Here's a basic example of how to use Flash:
+
+```go
 package main
 
 import (
 	"fmt"
 	"github.com/quix-labs/flash"
 	"github.com/quix-labs/flash/drivers/trigger"
+	"os"
+	"os/signal"
 )
 
 func main() {
-	postsListener, _ := flash.NewListener(&flash.ListenerConfig{
-		Table:  "public.posts",
-		Fields: []string{"id", "slug"},
-	})
+	// Example with listener and client setup
+	postsListener, _ := flash.NewListener(&flash.ListenerConfig{Table: "public.posts"})
+
 	postsListener.On(flash.OperationAll, func(event flash.Event) {
 		switch typedEvent := event.(type) {
 		case *flash.InsertEvent:
@@ -26,19 +32,23 @@ func main() {
 
 	// Create client
 	flashClient, _ := flash.NewClient(&flash.ClientConfig{
-		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb?sslmode=disable",
+		DatabaseCnx: "postgresql://devuser:devpass@localhost:5432/devdb",
 		Driver:      trigger.NewDriver(&trigger.DriverConfig{}),
 	})
 	flashClient.Attach(postsListener)
 
-	go func() {
-		err := flashClient.Start()
-		if err != nil {
-			panic(err)
-		}
-	}()
+	// Start listening
+	go flashClient.Start()
 	defer flashClient.Close()
 
-	// Keep process running
-	select {}
+	// Wait for interrupt signal (Ctrl+C)
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt)
+	<-interrupt
+
+	fmt.Println("Program terminated.")
 }
+
+```
+
+## TODO: How events working ? (Listen for all, for truncate + delete, ...)
