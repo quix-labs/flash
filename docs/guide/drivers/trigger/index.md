@@ -57,8 +57,8 @@ If you encounter any artifacts, you can simply drop the PostgreSQL schema with y
 
 ### Advanced Features support
 
-See [drivers/README.MD](../README.md)  for the compatibility table.
+See [Drivers Overview](/drivers) for compatibility table
 
 ### Internal workflow
 
-You can find a workflow graph [here](./WORKFLOW.md).
+You can find a workflow graph [here](./WORKFLOW).
